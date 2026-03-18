@@ -162,6 +162,18 @@ def _fallback_frd_parser(frd_file: Path, vtu_path: Path) -> VtkExportResult:
     point_data: dict[str, np.ndarray] = {}
     exported_fields: list[str] = []
 
+    # 辅助函数：根据分量名判断结果类型
+    def _get_result_type(components: list[str]) -> str:
+        """根据分量名判断结果类型（位移/应力/其他）"""
+        comp_str = " ".join(components).upper()
+        if any(c in comp_str for c in ["D1", "D2", "D3", "U1", "U2", "U3", "DISP"]):
+            return "Displacement"
+        if any(c in comp_str for c in ["SXX", "SYY", "SZZ", "SXY", "SYZ", "SZX", "STRESS"]):
+            return "Stress"
+        if "STR(" in comp_str or "ERROR" in comp_str:
+            return "Error"
+        return "Result"
+
     for res in frd.results:
         if not res.values:
             continue
@@ -178,12 +190,14 @@ def _fallback_frd_parser(frd_file: Path, vtu_path: Path) -> VtkExportResult:
             if idx is not None and len(vals) == n_comps:
                 arr[idx] = vals
 
-        field_key = f"{res.name}_step{res.step}"
+        # 根据分量类型生成有意义的字段名
+        result_type = _get_result_type(res.components)
+        field_key = f"{result_type}_step{res.step}"
         point_data[field_key] = arr.squeeze() if n_comps == 1 else arr
         exported_fields.append(field_key)
 
-        # 计算 Von Mises 应力（如果有 6 个应力分量 S11 S22 S33 S12 S13 S23）
-        if "STRESS" in res.name.upper() and n_comps >= 6:
+        # 如果是应力分量，计算 Von Mises 应力
+        if result_type == "Stress" and n_comps >= 6:
             vm = _von_mises(arr)
             vm_key = f"VonMises_step{res.step}"
             point_data[vm_key] = vm

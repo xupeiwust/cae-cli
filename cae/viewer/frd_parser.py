@@ -248,11 +248,17 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
 
         elif line.startswith(" -1"):
             # 结果数值行：" -1  <nid>  <v1>  <v2>  ..."
-            parts1 = line.split()
-            if len(parts1) >= 2:
+            # 注意：CalculiX 有时会输出没有空格分隔的数字，如 "3-4.72724E+00" 或 "1.40337E-05-4.50989E-06"
+            # 使用正则表达式匹配所有科学计数法数字
+            import re
+            # 匹配科学计数法数字（包括可能连在一起的情况）
+            number_pattern = r'[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?'
+            matches = re.findall(number_pattern, line)
+            # matches[0] 是 "-1" (行类型), matches[1] 是 node_id, matches[2:] 是 values
+            if len(matches) >= 3:
                 try:
-                    nid = int(parts1[1])
-                    vals = [float(x) for x in parts1[2:]]
+                    nid = int(matches[1])  # matches[0] is "-1" (line type)
+                    vals = [float(v) for v in matches[2:]]
                     node_ids.append(nid)
                     values.append(vals)
                 except (ValueError, IndexError):
