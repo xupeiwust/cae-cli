@@ -672,6 +672,7 @@ def view(
     port: int = typer.Option(8888, "--port", "-p", help="HTTP 服务端口"),
     no_browser: bool = typer.Option(False, "--no-browser", help="不自动打开浏览器"),
     no_convert: bool = typer.Option(False, "--no-convert", help="跳过 .frd → .vtu 自动转换"),
+    report: bool = typer.Option(True, "--report/--no-report", help="自动生成 HTML 报告（含云图）"),
 ) -> None:
     """
     [bold]在浏览器中查看仿真结果[/bold]（ParaView Glance）
@@ -736,6 +737,81 @@ def view(
                     err_console.print(f"    转换失败: {result.error}")
         console.print()
         vtu_files = list(results_dir.glob("*.vtu"))
+
+    # ---- 生成 HTML 报告 ----
+    if report and vtu_files:
+        from cae.viewer import pyvista_renderer, html_generator, ReportConfig, ReportSection
+
+        console.print("  正在生成 HTML 报告...")
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            for vtu_file in vtu_files:
+                task = progress.add_task(f"  处理 {vtu_file.name}", total=None)
+                output_dir = vtu_file.parent
+                job_name = vtu_file.stem
+
+                try:
+                    # 加载网格信息
+                    mesh = pyvista_renderer.load_result(vtu_file)
+                    info = pyvista_renderer.get_mesh_info(mesh)
+
+                    # 渲染图像
+                    renders: dict[str, pyvista_renderer.RenderResult] = {}
+                    renders["displacement"] = pyvista_renderer.render_displacement(
+                        vtu_file, output_dir / f"{job_name}_disp.png", scale_factor=50.0
+                    )
+                    renders["von_mises"] = pyvista_renderer.render_von_mises(
+                        vtu_file, output_dir / f"{job_name}_vm.png"
+                    )
+                    renders["slice_x"] = pyvista_renderer.render_slice(
+                        vtu_file, output_dir / f"{job_name}_slice_x.png", normal="x"
+                    )
+                    renders["slice_y"] = pyvista_renderer.render_slice(
+                        vtu_file, output_dir / f"{job_name}_slice_y.png", normal="y"
+                    )
+                    renders["slice_z"] = pyvista_renderer.render_slice(
+                        vtu_file, output_dir / f"{job_name}_slice_z.png", normal="z"
+                    )
+
+                    # 构建报告
+                    sections: list[ReportSection] = []
+                    _SECTION_LABELS = {
+                        "displacement": ("变形云图", "位移场 U（放大50倍）"),
+                        "von_mises": ("Von Mises 应力", "等效应力 (MPa)"),
+                        "slice_x": ("截面切片 — X", "沿 X 轴中点截面"),
+                        "slice_y": ("截面切片 — Y", "沿 Y 轴中点截面"),
+                        "slice_z": ("截面切片 — Z", "沿 Z 轴中点截面"),
+                    }
+                    for key, res in renders.items():
+                        label, caption = _SECTION_LABELS.get(key, (key, ""))
+                        if res.success and res.first():
+                            sections.append(ReportSection(
+                                title=label,
+                                image_path=res.first(),
+                                caption=caption,
+                            ))
+
+                    config = ReportConfig(
+                        title=f"{job_name} 仿真报告",
+                        job_name=job_name,
+                        node_count=info.n_points,
+                        element_count=info.n_cells,
+                        sections=sections,
+                    )
+
+                    report_path = output_dir / f"{job_name}_report.html"
+                    html_generator.generate_report(config, report_path)
+
+                    progress.update(task, description=f"  {vtu_file.name}", completed=True)
+                    console.print(f"    报告: {report_path.name} ({report_path.stat().st_size // 1024} KB)")
+                except Exception as exc:
+                    progress.update(task, description=f"  {vtu_file.name}", completed=True)
+                    err_console.print(f"    报告生成失败: {exc}")
+        console.print()
 
     # ---- 启动服务器 ----
     try:
