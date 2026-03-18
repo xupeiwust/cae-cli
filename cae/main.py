@@ -112,10 +112,7 @@ def solve(
 
     # ---- 交互式选择求解器 ----
     if solver is None:
-        solver = typer.prompt(
-            "  求解器 [calculix]",
-            default=settings.default_solver,
-        )
+        solver = settings.default_solver
 
     console.print()
 

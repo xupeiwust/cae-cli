@@ -6,7 +6,8 @@ CalculiX 求解器实现
 二进制查找优先级：
   1. ~/.local/share/cae-cli/solvers/calculix/ccx  （cae install 安装的）
   2. 系统 PATH 中的 ccx / ccx_2.21 等
-  3. WSL 中的 ccx（如果可用）
+  3. MSYS2/MinGW 常见路径中的 ccx
+  4. WSL 中的 ccx（如果可用）
 """
 from __future__ import annotations
 
@@ -27,6 +28,18 @@ _WARN_MARKERS = ("*WARNING", "Warning", "warning:")
 
 # 系统 PATH 中常见的 CalculiX 可执行文件名
 _CCX_NAMES = ["ccx", "ccx_2.21", "ccx_2.20", "ccx_2.19", "ccx_2.18", "CalculiX"]
+
+# MSYS2/MinGW 常见安装路径
+_MSYS2_PATHS = [
+    Path("D:/Apps/tools/msys/ucrt64/bin/ccx.exe"),
+    Path("D:/Apps/tools/msys/mingw64/bin/ccx.exe"),
+    Path("C:/msys64/ucrt64/bin/ccx.exe"),
+    Path("C:/msys64/mingw64/bin/ccx.exe"),
+    Path("C:/msys2/ucrt64/bin/ccx.exe"),
+    Path("C:/msys2/mingw64/bin/ccx.exe"),
+    # 项目目录下的 ccx
+    Path("D:/CAE-CLI/cae-cli/cxx.exe/ccx.exe"),
+]
 
 
 class CalculixSolver(BaseSolver):
@@ -55,13 +68,18 @@ class CalculixSolver(BaseSolver):
             if candidate.is_file():
                 return candidate
 
-        # 2. 系统 PATH
+        # 2. 项目目录下的 ccx
+        for candidate in _MSYS2_PATHS:
+            if candidate.exists():
+                return candidate.resolve()
+
+        # 3. 系统 PATH
         for name in _CCX_NAMES:
             found = shutil.which(name)
             if found:
                 return Path(found)
 
-        # 3. WSL 中的 ccx
+        # 4. WSL 中的 ccx
         wsl_ccx = self._find_wsl_ccx()
         if wsl_ccx:
             return wsl_ccx
@@ -121,6 +139,29 @@ class CalculixSolver(BaseSolver):
     def supported_formats(self) -> list[str]:
         return [".inp"]
 
+    def _add_msys2_path(self) -> None:
+        """添加 MSYS2 bin 目录到 PATH（ccx.exe 需要这些 DLL）"""
+        import os
+        msys2_bin = Path("D:/Apps/tools/msys/ucrt64/bin")
+        if msys2_bin.exists():
+            current_path = os.environ.get("PATH", "")
+            if str(msys2_bin) not in current_path:
+                os.environ["PATH"] = str(msys2_bin) + os.pathsep + current_path
+        else:
+            # 尝试其他常见路径
+            for alt_path in ["C:/msys64/ucrt64/bin", "C:/msys2/ucrt64/bin"]:
+                if Path(alt_path).exists():
+                    current_path = os.environ.get("PATH", "")
+                    if alt_path not in current_path:
+                        os.environ["PATH"] = alt_path + os.pathsep + current_path
+                    break
+
+    def _get_env(self) -> dict:
+        """获取环境变量（包含 MSYS2 路径）"""
+        import os
+        self._add_msys2_path()
+        return os.environ.copy()
+
     def solve(
         self,
         inp_file: Path,
@@ -136,6 +177,9 @@ class CalculixSolver(BaseSolver):
         - 以 output_dir 为 CWD 运行（输出文件落地在此）
         - 需要把 .inp 文件复制/硬链接到 output_dir
         """
+        # 添加 MSYS2 路径
+        self._add_msys2_path()
+
         # --- 前置检查 ---
         binary = self._find_binary()
         if not binary:
@@ -165,6 +209,9 @@ class CalculixSolver(BaseSolver):
         is_wsl = self._is_wsl(binary)
 
         try:
+            # 获取包含 MSYS2 路径的环境变量
+            env = self._get_env()
+
             if is_wsl:
                 # 使用 WSL 运行
                 # 需要将路径转换为 WSL 路径格式
@@ -176,6 +223,7 @@ class CalculixSolver(BaseSolver):
                     capture_output=True,
                     text=True,
                     timeout=timeout,
+                    env=env,
                 )
             else:
                 # 直接运行
@@ -186,6 +234,7 @@ class CalculixSolver(BaseSolver):
                     capture_output=True,
                     text=True,
                     timeout=timeout,
+                    env=env,
                 )
         except subprocess.TimeoutExpired:
             return self._error_result(

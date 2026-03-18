@@ -1,50 +1,28 @@
-**
-** Simple beam example for CalculiX
-** Static analysis
-**
 *HEADING
-Simple Beam Test
-**
+One element tension test
 *NODE
-1, 0.0, 0.0, 0.0
-2, 1.0, 0.0, 0.0
-3, 2.0, 0.0, 0.0
-4, 3.0, 0.0, 0.0
-5, 4.0, 0.0, 0.0
-**
-*ELEMENT, TYPE=B31, ELSET=BEAM
-1, 1, 2
-2, 2, 3
-3, 3, 4
-4, 4, 5
-**
+1,0,0,0
+2,1,0,0
+3,1,1,0
+4,0,1,0
+5,0,0,1
+6,1,0,1
+7,1,1,1
+8,0,1,1
+*ELEMENT, TYPE=C3D8, ELSET=SIMP
+1,1,2,3,4,5,6,7,8
 *MATERIAL, NAME=STEEL
 *ELASTIC
-210000.0, 0.3
-**
-*SECTION, ELSET=BEAM, TYPE=RECT
-0.1, 0.1
-**
+210000, .3
+*DENSITY
+7.8E-6
+*SOLID SECTION, ELSET=SIMP, MATERIAL=STEEL
+1.
 *BOUNDARY
-1, 1, 3, 0.0
-1, 2, 3, 0.0
-1, 4, 6, 0.0
-**
+1,1,3,0.
 *STEP
 *STATIC
-**
+1.,1.
 *CLOAD
-5, 1, -1000.0
-5, 2, -500.0
-**
-*OUTPUT, FIELD
-*NODE OUTPUT
-U
-*ELEMENT OUTPUT
-S, MISES
-**
-*OUTPUT, HISTORY
-*NODE OUTPUT
-U
-**
+2,1,1.
 *END
