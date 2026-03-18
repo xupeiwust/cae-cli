@@ -1,0 +1,30 @@
+# Python
+venv/
+.venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+dist/
+build/
+*.egg
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
+InstallationLog.txt
+
+# OS
+.DS_Store
+Thumbs.db
+
+# cae-cli specific
+results/
+*.frd
+*.dat
+*.vtu
