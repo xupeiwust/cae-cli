@@ -277,3 +277,40 @@ Suggestions count: 1
   - 函数名 `list` 遮蔽 Python 内置 `list` 类型，导致 Typer signature 检查失败
   - 解决：函数改名为 `list_keywords_cmd`，命令名仍为 `list`
   - keyword 参数改为 `--keyword/-k` 选项，避免与 category 位置冲突
+
+---
+
+## 2026年3月19日（晚）
+
+### 新增：INP 模板生成功能
+
+- **问题描述**：用户需要快速生成标准 .inp 文件，不用每次手动编写。
+
+- **解决方法**：
+
+  1. **新建 `cae/inp/template.py`**：
+     - `TemplateInfo` / `TemplateParams` 数据类
+     - `list_templates()` — 列出所有内置模板
+     - `get_template(name)` — 按名称获取模板
+     - `render_template(name, **kwargs)` — 渲染模板返回 INP 文本
+     - `render_to_file(name, output, **kwargs)` — 渲染并写入文件
+
+  2. **新建模板文件**：
+     - `cantilever_beam.inp.j2` — 悬臂梁模板（B32 梁单元）
+       - 参数：title, material_name, E, density, L, width, height, n_nodes, load_type, load_value
+     - `flat_plate.inp.j2` — 平板模板（S4 壳单元，四角固支）
+       - 参数：title, material_name, E, density, Lx, Ly, thickness, n_x, n_y, load_type, pressure, load_value
+
+  3. **新增 `cae inp template` CLI 命令**：
+     - `cae inp template --list` — 列出所有模板
+     - `cae inp template cantilever_beam --params` — 显示模板参数
+     - `cae inp template cantilever_beam -o model.inp` — 生成 INP 文件
+     - `cae inp template cantilever_beam -o model.inp --L=200 --nodes=21 --load=500` — 带参数生成
+
+  4. **更新 `pyproject.toml`**：
+     - 添加 `jinja2>=3.1` 依赖
+
+- **解决效果**：
+  - 一条命令生成标准悬臂梁/平板 INP 文件
+  - 支持参数覆盖，方便批量生成变体模型
+  - 可扩展：可在 `templates/` 目录添加更多模板
