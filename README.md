@@ -273,6 +273,22 @@ cae test --quiet
 
 ---
 
+## 内置 AI 模型
+
+| 模型 | 大小 | 量化 | 来源 |
+|------|------|------|------|
+| `deepseek-r1-7b` | 4.9 GB | Q4_K_M | huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-GGUF |
+| `deepseek-r1-14b` | 9.0 GB | Q4_K_M | huggingface.co/deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-GGUF |
+| `qwen2.5-7b` | 4.7 GB | Q4_K_M | huggingface.co/Qwen/Qwen2.5-7B-Instruct-GGUF |
+
+**安装命令：**
+```bash
+cae model install deepseek-r1-7b                    # 默认从 Hugging Face 下载
+cae model install deepseek-r1-7b --mirror https://hf-mirror.com  # 使用国内镜像
+```
+
+---
+
 ## 项目结构
 
 ```
