@@ -236,3 +236,9 @@ Suggestions count: 1
   - `cae mesh check model.inp` 输出 HTML 报告和截图
   - 自动打开浏览器预览
   - 类似 CGX 实时预览：节点着色 = 边界条件，箭头 = 载荷
+
+- **测试验证（已修复的 bug）**：
+  - `simple_beam.inp` → 8节点/1单元，BC:node=1/DOF=1-3，CLOAD:node=2
+  - `simple_cantilever.inp` → 12节点/2单元，BC:nset=NALL/DOF=1-3，CLOAD:4个节点各1000N
+  - boundary 解析：支持 NSET 名称数据行 `NALL, 1, 3, 0.0`
+  - PyVista UnstructuredGrid：改用 numpy flat_cells 数组构建
