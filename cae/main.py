@@ -220,6 +220,74 @@ def modify(
     mod.write(out_path)
     console.print(f"  已写入: [green]{out_path}[/green]\n")
 
+
+@inp_app.command()
+def suggest(
+    inp_file: Path = typer.Argument(..., help=".inp 文件路径"),
+    results_dir: Optional[Path] = typer.Option(
+        None, "--results", "-r", help="结果目录（用于结合诊断结果）"
+    ),
+    no_ai: bool = typer.Option(False, "--no-ai", help="只用规则建议，不用 AI"),
+    stream: bool = typer.Option(True, "--stream/--no-stream"),
+) -> None:
+    """[bold]AI 生成 INP 修改建议[/bold]"""
+    from cae.inp import suggest_inp_modifications
+    from cae.ai.llm_client import LLMClient
+
+    console.print()
+    console.print(Panel.fit("[bold cyan]cae inp suggest[/bold cyan] — INP 修改建议", border_style="cyan"))
+    console.print()
+
+    # 收集诊断问题（如果提供了 results_dir）
+    diagnose_issues = None
+    if results_dir is not None:
+        from cae.viewer._utils import find_frd
+        frd_file = find_frd(results_dir)
+        if frd_file is not None:
+            from cae.viewer.frd_parser import parse_frd
+            try:
+                frd_data = parse_frd(frd_file)
+                # 取最大位移和最大应力作为诊断依据
+                if frd_data.results:
+                    last = frd_data.results[-1]
+                    if last.displacements:
+                        max_disp = max(abs(v) for vals in last.displacements.values() for v in vals)
+                        console.print(f"  最大位移: {max_disp:.4e}")
+                    if last.stresses:
+                        max_stress = max(abs(v) for vals in last.stresses.values() for v in vals)
+                        console.print(f"  最大应力: {max_stress:.4e}")
+            except Exception:
+                pass
+
+    # AI client
+    client = None
+    if not no_ai:
+        client = LLMClient()
+        if not client.is_running():
+            console.print("  llama-server 未运行，使用规则建议\n")
+            client = None
+        else:
+            console.print("  AI 正在分析，请稍候...\n")
+
+    result = suggest_inp_modifications(inp_file, diagnose_issues, client, stream=stream)
+
+    if not result.success:
+        err_console.print(f"\n  {result.error}\n")
+        raise typer.Exit(1)
+
+    if result.suggestions:
+        console.print(f"  [bold]共 {len(result.suggestions)} 条建议：[/bold]\n")
+        for i, s in enumerate(result.suggestions, 1):
+            icon = {"high": "[red]![/red]", "medium": "[yellow]~[/yellow]", "low": "[green]-[/green]"}.get(s.severity, "-")
+            console.print(f"  {i}. {icon} [{s.category}] {s.action.upper()} {s.target_keyword}"
+                          + (f" NAME={s.target_name}" if s.target_name else ""))
+            console.print(f"     原因: {s.reason}")
+            if s.params:
+                console.print(f"     参数: {s.params}")
+            console.print()
+    else:
+        console.print("  [green]未发现问题，无需修改建议[/green]\n")
+
 # ------------------------------------------------------------------ #
 # App 初始化
 # ------------------------------------------------------------------ #
