@@ -83,7 +83,7 @@ def mesh_check(
 
     if result.warnings:
         for w in result.warnings:
-            console.print(f"  [yellow]⚠[/yellow] {w}")
+            console.print(f"  [yellow][!][/yellow] {w}")
         console.print()
 
     # 生成 HTML
