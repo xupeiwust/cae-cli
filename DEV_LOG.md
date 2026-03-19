@@ -164,3 +164,10 @@ Suggestions count: 1
   - 完整解析 .inp 文件，保留原始格式
   - 支持按关键词 + 参数精确定位修改
   - 可扩展：kw_list.json 可随时从 cae-master 同步更新
+
+  3. **新增 `cae inp` CLI 命令组**：
+     - `cae inp info model.inp` — 显示关键词统计摘要
+     - `cae inp check model.inp` — 对照 kw_list.json 校验必填参数
+     - `cae inp show model.inp -k *MATERIAL -n STEEL` — 显示指定块内容
+     - `cae inp modify model.inp -k *MATERIAL -n STEEL --set E=210000` — 修改参数
+     - `cae inp modify model.inp -k *STEP -n STEP-1 --delete` — 删除块
