@@ -224,6 +224,13 @@ cae install --model deepseek-r1-7b-qwen   # 仅安装 AI 模型
 cae download "https://example.com/model.gguf" -o models/
 cae download "https://example.com/model.gguf" -n my_model.gguf
 
+# AI 模型管理（推荐方式：从 Hugging Face 下载）
+cae model list                        # 列出可用模型
+cae model install deepseek-r1-7b     # 下载并安装模型
+cae model install deepseek-r1-7b --mirror https://hf-mirror.com  # 使用镜像
+cae model info deepseek-r1-7b        # 显示模型详细信息
+cae model uninstall deepseek-r1-7b   # 卸载模型
+
 # 显示配置信息
 cae info
 # 显示：
