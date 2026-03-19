@@ -23,6 +23,9 @@ __all__ = [
     "InpModifier",
     "InpFile",
     "load_kw_list",
+    "load_kw_tree",
+    "list_keywords",
+    "get_keyword_info",
     "validate_block",
     "suggest_inp_modifications",
     "replace_values",
@@ -858,3 +861,139 @@ def _get_column_index(column_key: str, columns: Optional[dict[str, int]]) -> int
         "RHO": 2,
     }
     return COMMON_COLUMNS.get(column_key.upper(), 0)
+
+
+# ------------------------------------------------------------------ #
+# kw_tree — 关键词层级导航
+# ------------------------------------------------------------------ #
+
+_kw_tree: Optional[dict] = None
+
+
+def load_kw_tree() -> dict:
+    """加载关键词层级定义（kw_tree.json）。"""
+    global _kw_tree
+    if _kw_tree is None:
+        kw_path = Path(__file__).parent / "kw_tree.json"
+        with open(kw_path, encoding="utf-8") as f:
+            _kw_tree = json.load(f)
+    return _kw_tree
+
+
+def list_keywords(category: Optional[str] = None) -> list[str]:
+    """
+    列出关键词。
+
+    Args:
+        category: 可选，分类名称（如 "Mesh", "Properties", "Step"）
+
+    Returns:
+        关键词列表
+    """
+    tree = load_kw_tree()
+    if category is None:
+        # 返回所有关键词
+        all_kw: list[str] = []
+        _collect_keywords(tree.get("Collections", {}), all_kw)
+        return all_kw
+
+    colls = tree.get("Collections", {})
+    if category not in colls:
+        return []
+    return _flatten_collection(colls[category])
+
+
+def _collect_keywords(node: dict, out: list[str]) -> None:
+    """递归收集所有关键词。"""
+    if "keywords" in node:
+        out.extend(node["keywords"])
+    if "nested" in node:
+        for v in node["nested"].values():
+            if isinstance(v, dict):
+                _collect_keywords(v, out)
+            elif isinstance(v, list):
+                out.extend(v)
+
+
+def _flatten_collection(node: dict) -> list[str]:
+    """将 collection 节点展平为关键词列表。"""
+    result: list[str] = []
+    if "keywords" in node:
+        result.extend(node["keywords"])
+    if "nested" in node:
+        for v in node["nested"].values():
+            if isinstance(v, dict):
+                result.extend(_flatten_collection(v))
+            elif isinstance(v, list):
+                result.extend(v)
+    if "Section" in node and isinstance(node["Section"], dict):
+        result.extend(_flatten_collection(node["Section"]))
+    if "Analysis type" in node and isinstance(node["Analysis type"], dict):
+        result.extend(_flatten_collection(node["Analysis type"]))
+    if "Field Output" in node and isinstance(node["Field Output"], dict):
+        result.extend(_flatten_collection(node["Field Output"]))
+    if "Load & BC" in node and isinstance(node["Load & BC"], dict):
+        result.extend(_flatten_collection(node["Load & BC"]))
+    if "Change" in node and isinstance(node["Change"], dict):
+        result.extend(_flatten_collection(node["Change"]))
+    return result
+
+
+def get_keyword_info(keyword: str) -> dict:
+    """
+    获取关键词详细信息。
+
+    Returns:
+        {"keyword": "...", "args": [...], "category": "...", "parent": [...]}
+    """
+    kw_list = load_kw_list()
+    tree = load_kw_tree()
+    kw_upper = keyword.upper()
+
+    # 从 kw_list 获取参数定义
+    kw_def = kw_list.get(keyword, kw_list.get(kw_upper, {}))
+    args = []
+    for arg in kw_def.get("arguments", []):
+        args.append({
+            "name": arg.get("name"),
+            "form": arg.get("form"),
+            "required": arg.get("required", False),
+            "options": arg.get("options"),
+            "use": arg.get("use"),
+        })
+
+    # 从 kw_tree 获取分类路径
+    category_path: list[str] = []
+    _find_keyword_path(tree.get("Collections", {}), kw_upper, [], category_path)
+
+    return {
+        "keyword": keyword,
+        "args": args,
+        "category": category_path[0] if category_path else None,
+        "path": category_path,
+        "known": kw_upper in kw_list,
+    }
+
+
+def _find_keyword_path(
+    node: dict,
+    target: str,
+    path: list[str],
+    result: list[str],
+) -> bool:
+    """递归查找关键词在 tree 中的路径。"""
+    for name, content in node.items():
+        current_path = path + [name]
+        if isinstance(content, dict):
+            if "keywords" in content and target in content["keywords"]:
+                result[:] = current_path
+                return True
+            if "nested" in content:
+                if _find_keyword_path(content["nested"], target, current_path, result):
+                    return True
+            # 递归检查 Section / Analysis type 等子节点
+            for sub_key in ("Section", "Analysis type", "Field Output", "Load & BC", "Change"):
+                if sub_key in content and isinstance(content[sub_key], dict):
+                    if _find_keyword_path({sub_key: content[sub_key]}, target, current_path, result):
+                        return True
+    return False
