@@ -1019,6 +1019,70 @@ def explain(
 
 
 @app.command()
+def suggest(
+    results_dir: Optional[Path] = typer.Argument(None, help="结果目录"),
+    no_ai: bool = typer.Option(False, "--no-ai", help="只做规则建议，不使用 AI"),
+    stream: bool = typer.Option(True, "--stream/--no-stream", help="流式输出"),
+) -> None:
+    """[bold]AI 生成优化建议[/bold]"""
+    from cae.ai.suggest import suggest_results
+    from cae.ai.diagnose import diagnose_results
+    from cae.ai.llm_client import LLMClient
+
+    console.print()
+    console.print(Panel.fit("[bold cyan]cae suggest[/bold cyan] — AI 优化建议", border_style="cyan"))
+    console.print()
+
+    if results_dir is None:
+        raw = typer.prompt("  请输入结果目录路径")
+        results_dir = Path(raw.strip())
+
+    # 先做诊断
+    client = None
+    if not no_ai:
+        client = LLMClient()
+        if not client.is_running():
+            console.print("  llama-server 未运行，仅生成规则建议\n")
+            client = None
+
+    # 执行诊断
+    diagnose_result = diagnose_results(results_dir, client, stream=False)
+
+    if not diagnose_result.success:
+        err_console.print(f"\n  诊断失败: {diagnose_result.error}\n")
+        raise typer.Exit(1)
+
+    # 显示发现的问题
+    if diagnose_result.issues:
+        console.print(f"  发现 {diagnose_result.issue_count} 个问题：")
+        for iss in diagnose_result.issues[:5]:
+            icon = "[X]" if iss.severity == "error" else "[!]"
+            console.print(f"  {icon} [{iss.category}] {iss.message[:80]}")
+        console.print()
+
+    # 生成建议
+    console.print("  正在生成优化建议...\n")
+    suggest_result = suggest_results(results_dir, diagnose_result, client, stream=stream)
+
+    if not suggest_result.success:
+        err_console.print(f"\n  建议生成失败: {suggest_result.error}\n")
+        raise typer.Exit(1)
+
+    # 显示建议
+    if suggest_result.suggestions:
+        console.print("  [bold]优化建议：[/bold]")
+        for i, sug in enumerate(suggest_result.suggestions[:5], 1):
+            priority_icon = "🔴" if sug.priority <= 2 else "🟡" if sug.priority <= 3 else "🟢"
+            console.print(f"\n  {i}. {priority_icon} {sug.title}")
+            console.print(f"     类别: {sug.category}  |  难度: {sug.implementation_difficulty}")
+            console.print(f"     {sug.description}")
+            console.print(f"     预期改进: {sug.expected_improvement}")
+        console.print()
+
+    console.print()
+
+
+@app.command()
 def diagnose(
     results_dir: Optional[Path] = typer.Argument(None, help="结果目录"),
     no_ai: bool = typer.Option(False, "--no-ai", help="只做规则检测，跳过 AI"),

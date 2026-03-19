@@ -16,6 +16,8 @@
 
 ```bash
 pip install cae-cli
+pip install cae-cli[ai]    # 可选：AI 功能
+pip install cae-cli[mesh]   # 可选：高级网格功能
 ```
 
 **安装 CalculiX 求解器**:
@@ -71,8 +73,52 @@ cae solve --help
 | `cae solvers` | 列出求解器状态 |
 | `cae install` | 安装/更新 CalculiX + AI 模型 |
 | `cae info` | 显示配置路径与版本信息 |
-| `cae explain [results/]` | AI 解读结果（需要 Ollama）|
-| `cae diagnose [results/]` | AI 诊断问题（需要 Ollama）|
+| `cae explain [results/]` | AI 解读仿真结果 |
+| `cae diagnose [results/]` | AI 诊断仿真问题 |
+| `cae suggest [results/]` | AI 生成优化建议 |
+
+## AI 功能
+
+需要安装 llama-cpp-python 和模型：
+
+```bash
+pip install cae-cli[ai]
+cae install --model deepseek-r1-7b-qwen
+```
+
+**explain** - AI 解读结果：
+```bash
+cae explain results/bracket/
+# 输出：节点数、位移分析、应力分析、安全评价
+```
+
+**diagnose** - AI 诊断问题：
+```bash
+cae diagnose results/bracket/
+# 发现：收敛问题、网格质量、应力集中等
+cae diagnose results/bracket/ --no-ai  # 仅规则检测
+```
+
+**suggest** - AI 优化建议：
+```bash
+cae suggest results/bracket/
+# 生成：优先级建议、预期改进、实现难度
+```
+
+**CadQuery 几何生成**（可选，需要 `pip install cadquery`）：
+```python
+from cae.ai.cad_generator import CadGenerator, BeamParams, PlateParams
+
+g = CadGenerator()
+
+# 创建梁
+result = g.create_beam(BeamParams(length=100, width=20, height=30))
+g.export_step(result.workplane, 'my_beam', output_dir='.')
+
+# 创建板
+result = g.create_plate(PlateParams(length=100, width=50, thickness=10))
+g.export_step(result.workplane, 'my_plate', output_dir='.')
+```
 
 ## 项目结构
 
@@ -96,7 +142,13 @@ cae-cli/
 │   ├── installer/       # 安装器
 │   │   ├── solver_installer.py  # CalculiX 安装
 │   │   └── model_installer.py   # AI 模型安装
-│   └── ai/              # AI 功能（需要 Ollama）
+│   ├── ai/              # AI 功能
+│   │   ├── llm_client.py      # LLM 客户端
+│   │   ├── explain.py         # AI 结果解读
+│   │   ├── diagnose.py        # AI 问题诊断
+│   │   ├── suggest.py         # AI 优化建议
+│   │   ├── cad_generator.py   # CadQuery 几何生成
+│   │   └── prompts.py         # Prompt 模板
 ├── examples/            # 示例文件
 │   ├── *.inp           # Abaqus 格式输入文件
 │   └── *.step           # STEP 几何文件
@@ -143,7 +195,7 @@ cae-cli/
 | 求解器 | CalculiX 2.22+ |
 | 格式转换 | meshio 5.x |
 | 可视化 | ParaView Glance (WebGL) |
-| AI（可选）| Ollama + DeepSeek R1 |
+| AI（可选）| llama-cpp-python + DeepSeek R1 |
 
 ## CalculiX 输入文件注意
 

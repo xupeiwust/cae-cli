@@ -28,3 +28,17 @@ results/
 *.frd
 *.dat
 *.vtu
+*.sta
+*.cvg
+*.12d
+*.log
+
+# Large binary files
+*.gguf
+*.gguf.lock
+cxx.exe/
+test_ccx/
+test_ccx2/
+
+# Build outputs
+release/

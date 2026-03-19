@@ -1,0 +1,245 @@
+# -*- coding: utf-8 -*-
+"""
+CalculiX 求解器安装器
+
+从 GitHub Release 下载并安装 CalculiX
+"""
+from __future__ import annotations
+
+import os
+import platform
+import shutil
+import subprocess
+import tarfile
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
+from urllib.request import urlretrieve
+from urllib.error import URLError
+
+# GitHub Release 地址
+REPO_OWNER = "yd5768365-hue"
+REPO_NAME = "cae-cli"
+RELEASE_VERSION = "v1.0.0"
+
+
+@dataclass
+class InstallResult:
+    """安装结果"""
+    success: bool
+    method: str = ""
+    install_dir: Optional[Path] = None
+    error_message: Optional[str] = None
+
+
+def get_platform() -> str:
+    """获取当前平台"""
+    system = platform.system().lower()
+    if system == "windows":
+        return "windows"
+    elif system == "linux":
+        return "linux"
+    elif system == "darwin":
+        return "macos"
+    return "unknown"
+
+
+def get_archive_name(platform_name: str) -> str:
+    """获取对应平台的压缩包名称"""
+    names = {
+        "windows": "ccx_windows.zip",
+        "linux": "ccx_linux.tar.gz",
+        "macos": "ccx_macos.tar.gz",
+    }
+    return names.get(platform_name, "ccx_windows.zip")
+
+
+class SolverInstaller:
+    """CalculiX 求解器安装器"""
+
+    def __init__(self):
+        self.platform = get_platform()
+        self.archive_name = get_archive_name(self.platform)
+
+        # ~/.cae-cli/solvers/calculix/
+        self.cae_home = Path.home() / ".cae-cli"
+        self.solvers_dir = self.cae_home / "solvers" / "calculix"
+        self.bin_dir = self.solvers_dir / "bin"
+
+    def is_installed(self) -> bool:
+        """检查是否已安装"""
+        # 检查常见的可执行文件
+        if self.platform == "windows":
+            return (self.bin_dir / "ccx.exe").is_file()
+        else:
+            return (self.bin_dir / "ccx").is_file()
+
+    def get_install_dir(self) -> Path:
+        """获取安装目录"""
+        return self.bin_dir
+
+    def _get_download_url(self) -> str:
+        """获取下载链接"""
+        return (
+            f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/"
+            f"{RELEASE_VERSION}/{self.archive_name}"
+        )
+
+    def _get_cae_dir(self) -> Path:
+        """获取 .cae-cli 目录"""
+        return self.cae_home
+
+    def install(
+        self,
+        progress_callback: Optional[callable] = None,
+        local_archive: Optional[Path] = None,
+    ) -> InstallResult:
+        """
+        安装 CalculiX
+
+        Args:
+            progress_callback: 进度回调函数 (percent: float, message: str)
+            local_archive: 本地压缩包路径（用于测试）
+
+        Returns:
+            InstallResult
+        """
+        if self.is_installed():
+            return InstallResult(success=True, method="already_installed")
+
+        # 确保安装目录存在
+        self.bin_dir.mkdir(parents=True, exist_ok=True)
+
+        # 确定使用本地文件还是下载
+        archive_path: Path
+        if local_archive and local_archive.exists():
+            archive_path = local_archive
+            download_url = None
+        else:
+            archive_path = self.cae_home / self.archive_name
+            download_url = self._get_download_url()
+
+        try:
+            if download_url:
+                if progress_callback:
+                    progress_callback(0.1, "正在下载...")
+
+                # 下载压缩包
+                self._download_file(download_url, archive_path, progress_callback)
+
+            if progress_callback:
+                progress_callback(0.7, "正在解压...")
+
+            # 解压
+            self._extract_archive(archive_path)
+
+            if progress_callback:
+                progress_callback(0.9, "正在清理...")
+
+            # 清理压缩包
+            if archive_path.exists():
+                archive_path.unlink()
+
+            # 验证安装
+            if self.is_installed():
+                if progress_callback:
+                    progress_callback(1.0, "安装完成")
+                return InstallResult(
+                    success=True,
+                    method=f"downloaded_from_github",
+                    install_dir=self.bin_dir,
+                )
+            else:
+                return InstallResult(
+                    success=False,
+                    error_message="安装后验证失败",
+                )
+
+        except Exception as e:
+            return InstallResult(
+                success=False,
+                error_message=str(e),
+            )
+
+    def _download_file(self, url: str, dest: Path, progress_callback: Optional[callable] = None) -> None:
+        """下载文件"""
+        import ssl
+
+        # 创建 SSL 上下文（解决证书问题）
+        ctx = ssl.create_default_context()
+        ctx.check_hostname = False
+        ctx.verify_mode = ssl.CERT_NONE
+
+        # 使用 curl 下载（更可靠）
+        try:
+            result = subprocess.run(
+                ["curl", "-L", "-o", str(dest), url, "--progress-bar"],
+                capture_output=True,
+                text=True,
+                timeout=300,
+            )
+            if result.returncode != 0:
+                raise RuntimeError(f"下载失败: {result.stderr}")
+        except FileNotFoundError:
+            # 回退到 urllib
+            def report_progress(block_num, block_size, total_size):
+                if progress_callback and total_size > 0:
+                    percent = min(block_num * block_size / total_size * 0.6, 0.6)
+                    progress_callback(percent, "下载中...")
+
+            urlretrieve(url, dest, reporthook=report_progress)
+
+    def _extract_archive(self, archive_path: Path) -> None:
+        """解压压缩包"""
+        if self.platform == "windows":
+            # 解压 ZIP
+            with zipfile.ZipFile(archive_path, "r") as zf:
+                zf.extractall(self.solvers_dir)
+        else:
+            # 解压 tar.gz
+            with tarfile.open(archive_path, "gz") as tf:
+                tf.extractall(self.solvers_dir)
+
+        # 检查解压后的目录结构
+        # 预期: solvers/calculix/bin/ccx 或 solvers/calculix/bin/ccx.exe
+        extracted_files = list(self.solvers_dir.rglob("ccx*"))
+        if not extracted_files:
+            raise RuntimeError("解压后未找到 ccx 可执行文件")
+
+        # 移动到 bin 目录（如果需要）
+        for f in extracted_files:
+            dest = self.bin_dir / f.name
+            if f != dest:
+                shutil.move(str(f), str(dest))
+
+        # 清理可能产生的空目录
+        self._cleanup_empty_dirs(self.solvers_dir)
+
+    def _cleanup_empty_dirs(self, root: Path) -> None:
+        """清理空目录"""
+        for dirpath in sorted(root.rglob("*"), reverse=True):
+            if dirpath.is_dir() and not any(dirpath.iterdir()):
+                try:
+                    dirpath.rmdir()
+                except OSError:
+                    pass
+
+    def uninstall(self) -> bool:
+        """卸载 CalculiX"""
+        if not self.is_installed():
+            return True
+
+        try:
+            # 删除 bin 目录
+            if self.bin_dir.exists():
+                shutil.rmtree(self.bin_dir)
+
+            # 如果 solvers 目录为空，也删除
+            solvers_root = self.solvers_dir.parent
+            if solvers_root.exists() and not any(solvers_root.iterdir()):
+                shutil.rmtree(solvers_root)
+
+            return True
+        except Exception:
+            return False
