@@ -266,9 +266,14 @@ Suggestions count: 1
   3. **新增 `cae inp list` CLI 命令**：
      - `cae inp list` — 显示所有分类及关键词数量（每类显示前5个示例）
      - `cae inp list Mesh` — 显示 Mesh 分类下的所有关键词
-     - `cae inp list *NODE` — 显示 `*NODE` 关键词的详细参数信息
+     - `cae inp list -k *NODE` — 显示 `*NODE` 关键词的详细参数信息
 
 - **解决效果**：
   - `cae inp list` 可快速浏览 135 个关键词的分类分布
-  - `cae inp list *BOUNDARY` 显示参数：`OP`（Combo|MOD|NEW）、NSET（Line）、DOF（Int/Float）等
+  - `cae inp list -k *BOUNDARY` 显示参数：`OP`（Combo|MOD|NEW）、NSET（Line）、DOF（Int/Float）等
   - kw_tree.json 可随时从 cae-master kw_tree.xml 同步更新
+
+- **Bug 修复**：
+  - 函数名 `list` 遮蔽 Python 内置 `list` 类型，导致 Typer signature 检查失败
+  - 解决：函数改名为 `list_keywords_cmd`，命令名仍为 `list`
+  - keyword 参数改为 `--keyword/-k` 选项，避免与 category 位置冲突
