@@ -227,35 +227,67 @@ def _parse_node_set(block, node_dict: dict) -> list[int]:
 
 
 def _parse_boundary(block) -> Optional[dict]:
-    """解析 *BOUNDARY，返回边界条件信息。"""
-    name = block.get_param("NAME")
-    nset = block.get_param("NSET") or block.get_param("NSET")
-    dof_start = block.get_param("DOF") or "1"
-    dof_end = block.get_param("DOF2") or dof_start
-    value = block.get_param("VALUE") or "0.0"
+    """解析 *BOUNDARY，返回边界条件信息。
 
-    # 从 data_lines 提取实际节点
+    Formats:
+      - node, dof_start, dof_end, value   (e.g. "1, 1, 3, 0.0")
+      - node, dof, value                  (e.g. "3, 2, 100.")
+      - NSET, dof_start, dof_end, value   (e.g. "NALL, 1, 3, 0.0")
+      - NSET, ...                         (named set, DOF from header)
+    """
+    name = block.get_param("NAME")
+    nset = block.get_param("NSET")
+
+    # 从 data_lines 提取实际节点或 NSET
     nodes = []
+    nset_from_data = nset  # 可能在 data_lines 中出现 NSET
+    dof_start, dof_end, value = 1, 3, 0.0
+
     for line in block.data_lines:
         if not line.strip() or line.startswith("**"):
             continue
         parts = line.replace(",", " ").split()
-        for p in parts:
-            try:
-                nodes.append(int(p))
-            except ValueError:
-                pass
+        if not parts:
+            continue
 
-    if not nodes and not nset:
+        first = parts[0]
+
+        # 如果第一个 token 不是整数，认为是 NSET 名称
+        try:
+            nid = int(first)
+            nodes.append(nid)
+        except ValueError:
+            # NSET 名称
+            nset_from_data = first
+
+        # 解析 DOF 和 VALUE
+        if len(parts) >= 2:
+            try:
+                dof_start = int(parts[1])
+            except ValueError:
+                dof_start = 1
+        if len(parts) >= 3:
+            try:
+                dof_end = int(parts[2])
+            except ValueError:
+                dof_end = dof_start
+        if len(parts) >= 4:
+            try:
+                value = float(parts[3])
+            except ValueError:
+                value = 0.0
+
+    final_nset = nset or nset_from_data
+    if not nodes and not final_nset:
         return None
 
     return {
-        "name": name or f"BC-{nset or 'unnamed'}",
-        "nset": nset,
+        "name": name or f"BC-{final_nset or 'unnamed'}",
+        "nset": final_nset,
         "nodes": nodes,
-        "dof_start": int(dof_start),
-        "dof_end": int(dof_end),
-        "value": float(value),
+        "dof_start": dof_start,
+        "dof_end": dof_end,
+        "value": value,
     }
 
 
@@ -407,27 +439,29 @@ def render_mesh_check(
     if not cells:
         warnings.append("未找到单元数据，仅显示节点")
 
-    # ---- 构建 PyVista 结构 ----
+    # ---- 构建 PyVista UnstructuredGrid ----
+    grid = None
     try:
-        grid = pv.UnstructuredGrid()
-        for cell_name, conn in cells:
-            etype_num = etype_name_to_num.get(cell_name.upper(), 0)
-            if etype_num == 1:
-                grid.insert_next_cell(pv.CellType.HEXAHEDRON, conn)
-            elif etype_num == 2:
-                grid.insert_next_cell(pv.CellType.WEDGE, conn)
-            elif etype_num == 3:
-                grid.insert_next_cell(pv.CellType.TETRA, conn)
-            elif etype_num == 7:
-                grid.insert_next_cell(pv.CellType.TRIANGLE, conn)
-            elif etype_num == 9:
-                grid.insert_next_cell(pv.CellType.QUAD, conn)
-            else:
-                grid.insert_next_cell(pv.CellType.QUAD, conn)
+        if cells and points:
+            # 转换为 PyVista 的 flat cells 格式
+            # 每组: [n0, node0, node1, ...]
+            flat_cells = []
+            flat_types = []
+            for cell_name, conn in cells:
+                n_nodes = len(conn)
+                flat_cells.append(n_nodes)
+                flat_cells.extend(conn)
+                etype_num = etype_name_to_num.get(cell_name.upper(), 9)
+                flat_types.append(etype_num)
 
-        grid.points = np.array(points)
+            flat_cells = np.array(flat_cells, dtype=np.int32)
+            flat_types = np.array(flat_types, dtype=np.uint8)
+            points_arr = np.array(points, dtype=np.float64)
+
+            grid = pv.UnstructuredGrid(flat_cells, flat_types, points_arr)
     except Exception as exc:
-        warnings.append(f"网格构建警告: {exc}")
+        warnings.append(f"网格构建失败: {exc}")
+        grid = None
 
     # ---- 渲染 ----
     try:
@@ -435,7 +469,7 @@ def render_mesh_check(
         pl.set_background("#1a1a24")
 
         # 网格
-        if grid.n_cells > 0:
+        if grid is not None and grid.n_cells > 0:
             pl.add_mesh(
                 grid,
                 show_edges=True,
@@ -502,7 +536,7 @@ def render_mesh_check(
             )
 
         pl.add_legend(
-            loc="upper_left",
+            loc="upper left",
             bcolor="#1a1a24",
             border=True,
             size=(0.25, 0.4),

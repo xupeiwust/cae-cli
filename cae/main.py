@@ -75,7 +75,7 @@ def mesh_check(
         raise typer.Exit(1)
 
     summary = result.summary
-    console.print(f"  [green]✓[/green] 解析成功")
+    console.print(f"  [green][OK][/green] 解析成功")
     console.print(f"  节点: {summary.n_nodes:,}  单元: {summary.n_elements:,}")
     console.print(f"  节点集: {summary.n_nsets}  单元集: {summary.n_elsets}")
     console.print(f"  边界条件: {len(summary.boundaries)}  CLOAD: {len(summary.cloads)}")
@@ -367,8 +367,8 @@ app = typer.Typer(
 app.add_typer(inp_app, name="inp")
 app.add_typer(mesh_app, name="mesh")
 
-console = Console()
-err_console = Console(stderr=True, style="bold red")
+console = Console(legacy_windows=False, force_terminal=True)
+err_console = Console(stderr=True, style="bold red", legacy_windows=False)
 
 # ------------------------------------------------------------------ #
 # cae solve
