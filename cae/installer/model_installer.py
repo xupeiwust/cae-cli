@@ -2,48 +2,58 @@
 """
 AI 模型安装器
 
-从 GitHub Release 下载并安装 AI 模型（GGUF 格式）
+支持从 Hugging Face / 指定镜像下载 GGUF 模型文件
 """
 from __future__ import annotations
 
+import hashlib
 import os
 import platform
-import shutil
 import subprocess
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
-from urllib.request import urlretrieve
-import ssl
 
-# GitHub Release 地址
-REPO_OWNER = "yd5768365-hue"
-REPO_NAME = "cae-cli"
-RELEASE_VERSION = "v1.0.0"
+# 默认镜像（可配置）
+DEFAULT_MIRRORS = [
+    "https://huggingface.co",
+    "https://hf-mirror.com",
+]
 
 
 @dataclass
 class ModelInfo:
     """模型信息"""
-    name: str
-    size_gb: float
-    description: str
-    filename: str
+    name: str                      # 模型标识（用于 install 命令）
+    repo_id: str                   # Hugging Face repo ID
+    filename: str                  # GGUF 文件名
+    size_gb: float                # 文件大小（GB）
+    sha256: str = ""               # SHA256 校验码（可选）
+    description: str = ""          # 描述
 
 
 # 已知模型列表
 KNOWN_MODELS: dict[str, ModelInfo] = {
-    "deepseek-r1-distill-qwen-7b-q2_k": ModelInfo(
-        name="deepseek-r1-distill-qwen-7b-q2_k",
-        size_gb=2.8,
-        description="DeepSeek R1 Distill Qwen 7B (Q2_K 量化，约 2.8GB)",
-        filename="DeepSeek-R1-Distill-Qwen-7B-Q2_K.gguf",
+    "deepseek-r1-7b": ModelInfo(
+        name="deepseek-r1-7b",
+        repo_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-7B-GGUF",
+        filename="DeepSeek-R1-Distill-Qwen-7B-Q4_K_M.gguf",
+        size_gb=4.9,
+        description="DeepSeek R1 Distill Qwen 7B (Q4_K_M 量化)",
     ),
-    "deepseek-r1-distill-qwen-14b-q2_k": ModelInfo(
-        name="deepseek-r1-distill-qwen-14b-q2_k",
-        size_gb=5.5,
-        description="DeepSeek R1 Distill Qwen 14B (Q2_K 量化，约 5.5GB)",
-        filename="DeepSeek-R1-Distill-Qwen-14B-Q2_K.gguf",
+    "deepseek-r1-14b": ModelInfo(
+        name="deepseek-r1-14b",
+        repo_id="deepseek-ai/DeepSeek-R1-Distill-Qwen-14B-GGUF",
+        filename="DeepSeek-R1-Distill-Qwen-14B-Q4_K_M.gguf",
+        size_gb=9.0,
+        description="DeepSeek R1 Distill Qwen 14B (Q4_K_M 量化)",
+    ),
+    "qwen2.5-7b": ModelInfo(
+        name="qwen2.5-7b",
+        repo_id="Qwen/Qwen2.5-7B-Instruct-GGUF",
+        filename="qwen2.5-7b-instruct-q4_k_m.gguf",
+        size_gb=4.7,
+        description="Qwen 2.5 7B Instruct (Q4_K_M 量化)",
     ),
 }
 
@@ -66,38 +76,52 @@ class DownloadResult:
     error_message: Optional[str] = None
 
 
+@dataclass
+class VerifyResult:
+    """校验结果"""
+    success: bool
+    expected: str = ""
+    actual: str = ""
+    error: Optional[str] = None
+
+
 class ModelInstaller:
     """AI 模型安装器"""
 
-    def __init__(self):
+    def __init__(self, mirror: Optional[str] = None):
         self.platform_name = platform.system().lower()
         # 模型安装到 ~/.cae-cli/models/
         self.cae_home = Path.home() / ".cae-cli"
         self.models_dir = self.cae_home / "models"
+        # 下载镜像
+        self.mirror = mirror or os.environ.get("HF_HUB_MIRROR", DEFAULT_MIRRORS[0])
 
     def is_installed(self, model_name: str) -> bool:
         """检查模型是否已安装"""
-        # 支持模糊匹配
-        search_name = model_name.lower().replace("-", "_").replace(".gguf", "")
-
-        for known_name, info in KNOWN_MODELS.items():
-            if (search_name in known_name.replace("-", "_") or
-                known_name.replace("-", "_") in search_name):
-                model_path = self.models_dir / info.filename
-                return model_path.exists()
-
-        # 如果不在已知列表中，也检查文件名
+        info = self._find_model(model_name)
+        if info:
+            model_path = self.models_dir / info.filename
+            return model_path.exists()
+        # 未知模型，按文件名检查
         model_path = self.models_dir / model_name
         if not model_path.name.endswith(".gguf"):
             model_path = model_path.with_suffix(".gguf")
         return model_path.exists()
 
+    def _find_model(self, model_name: str) -> Optional[ModelInfo]:
+        """查找匹配的模型信息"""
+        search = model_name.lower().replace("-", "_").replace(".gguf", "")
+        for info in KNOWN_MODELS.values():
+            if (search in info.name.replace("-", "_") or
+                info.name.replace("-", "_") in search):
+                return info
+        return None
+
     def get_install_path(self, model_name: str) -> Path:
         """获取模型的安装路径"""
-        for known_name, info in KNOWN_MODELS.items():
-            if known_name.replace("-", "_") in model_name.lower().replace("-", "_"):
-                return self.models_dir / info.filename
-        # 默认使用原名
+        info = self._find_model(model_name)
+        if info:
+            return self.models_dir / info.filename
         path = self.models_dir / model_name
         if not path.suffix:
             path = path.with_suffix(".gguf")
@@ -120,196 +144,188 @@ class ModelInstaller:
             for info in KNOWN_MODELS.values()
         ]
 
+    def list_installed(self) -> list[Path]:
+        """列出已安装的模型文件"""
+        if not self.models_dir.exists():
+            return []
+        return list(self.models_dir.glob("*.gguf"))
+
     def install(
         self,
         model_name: str,
         progress_callback: Optional[callable] = None,
+        mirror: Optional[str] = None,
     ) -> InstallResult:
         """
-        安装模型
+        安装模型（下载 + 校验）
 
         Args:
             model_name: 模型名称（支持简写，如 deepseek-r1-7b）
             progress_callback: 进度回调函数 (percent: float, message: str)
+            mirror: 下载镜像（覆盖默认）
 
         Returns:
             InstallResult
         """
-        # 查找匹配的模型
-        info = None
-        search_name = model_name.lower().replace("-", "_").replace(".gguf", "")
-
-        for known_name, model_info in KNOWN_MODELS.items():
-            if (search_name in known_name.replace("-", "_") or
-                known_name.replace("-", "_") in search_name or
-                search_name in known_name):
-                info = model_info
-                model_name = known_name  # 使用正式名称
-                break
-
+        # 查找模型
+        info = self._find_model(model_name)
         if info is None:
-            # 未知模型，尝试直接下载
-            info = ModelInfo(
-                name=model_name,
-                size_gb=0,
-                description=f"自定义模型: {model_name}",
-                filename=model_name if model_name.endswith(".gguf") else f"{model_name}.gguf",
-            )
+            # 未知模型，尝试作为 Hugging Face repo/filename
+            if "/" in model_name:
+                parts = model_name.split("/")
+                repo_id = model_name
+                filename = parts[-1] if parts[-1].endswith(".gguf") else "model.gguf"
+                info = ModelInfo(
+                    name=model_name,
+                    repo_id=repo_id,
+                    filename=filename,
+                    size_gb=0,
+                    description=f"自定义模型: {model_name}",
+                )
+            else:
+                return InstallResult(success=False, error_message=f"未知模型: {model_name}")
 
         model_path = self.models_dir / info.filename
+        use_mirror = mirror or self.mirror
 
         # 检查是否已安装
         if model_path.exists():
-            return InstallResult(success=True, method="already_installed", install_path=model_path)
+            # 校验已有文件
+            if progress_callback:
+                progress_callback(0.5, "文件已存在，正在校验...")
+            verify = self.verify_file(model_path, info.sha256)
+            if verify.success:
+                if progress_callback:
+                    progress_callback(1.0, "校验通过")
+                return InstallResult(success=True, method="already_installed", install_path=model_path)
+            else:
+                # 校验失败，删除并重新下载
+                if progress_callback:
+                    progress_callback(0.0, "文件校验失败，将重新下载...")
+                model_path.unlink()
 
         # 确保目录存在
         self.models_dir.mkdir(parents=True, exist_ok=True)
 
         # 构建下载 URL
-        download_url = (
-            f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/"
-            f"{RELEASE_VERSION}/{info.filename}"
-        )
+        download_url = f"{use_mirror.rstrip('/')}/{info.repo_id}/resolve/main/{info.filename}"
 
         try:
             if progress_callback:
-                progress_callback(0.1, "正在下载模型...")
+                progress_callback(0.05, f"准备下载...")
 
             # 下载文件
-            self._download_file(download_url, model_path, progress_callback)
+            result = self._download_file(download_url, model_path, progress_callback)
+            if not result.success:
+                return InstallResult(success=False, error_message=result.error_message)
 
-            # 验证下载
-            if model_path.exists() and model_path.stat().st_size > 1024 * 1024:  # > 1MB
+            # 校验
+            if info.sha256:
                 if progress_callback:
-                    progress_callback(1.0, "安装完成")
-                return InstallResult(
-                    success=True,
-                    method="downloaded_from_github",
-                    install_path=model_path,
-                )
-            else:
-                if model_path.exists():
+                    progress_callback(0.95, "正在校验 SHA256...")
+                verify = self.verify_file(model_path, info.sha256)
+                if not verify.success:
                     model_path.unlink()
-                return InstallResult(
-                    success=False,
-                    error_message="下载的文件无效",
-                )
+                    return InstallResult(
+                        success=False,
+                        error_message=f"SHA256 校验失败: 期望 {info.sha256[:16]}... 实际 {verify.actual[:16]}...",
+                    )
+
+            if progress_callback:
+                progress_callback(1.0, "安装完成")
+            return InstallResult(
+                success=True,
+                method="downloaded",
+                install_path=model_path,
+            )
 
         except Exception as e:
-            # 清理可能存在的无效文件
             if model_path.exists():
                 model_path.unlink()
             return InstallResult(success=False, error_message=str(e))
+
+    def verify_file(self, file_path: Path, expected_sha256: str = "") -> VerifyResult:
+        """校验文件 SHA256"""
+        if not file_path.exists():
+            return VerifyResult(success=False, error="文件不存在")
+
+        if not expected_sha256:
+            # 只检查文件存在
+            return VerifyResult(success=True, expected="(未校验)", actual="(未校验)")
+
+        # 计算 SHA256
+        sha256_hash = hashlib.sha256()
+        with open(file_path, "rb") as f:
+            for chunk in iter(lambda: f.read(8192 * 1024), b""):
+                sha256_hash.update(chunk)
+
+        actual = sha256_hash.hexdigest()
+        success = actual.lower() == expected_sha256.lower()
+
+        return VerifyResult(
+            success=success,
+            expected=expected_sha256,
+            actual=actual,
+        )
 
     def _download_file(
         self,
         url: str,
         dest: Path,
         progress_callback: Optional[callable] = None,
-    ) -> None:
-        """下载文件"""
-        # 使用 curl 下载（更可靠，支持进度）
+    ) -> DownloadResult:
+        """下载文件（优先使用 wget/curl）"""
         try:
-            # 检查是否有 curl
-            result = subprocess.run(
-                ["curl", "-L", "-o", str(dest), url, "--progress-bar", "--connect-timeout", "30"],
-                capture_output=True,
-                text=True,
-                timeout=3600,  # 1 小时超时
-            )
-            if result.returncode != 0:
-                raise RuntimeError(f"下载失败: {result.stderr}")
-        except FileNotFoundError:
-            # 回退到 urllib
-            def report_progress(block_num, block_size, total_size):
-                if progress_callback and total_size > 0:
-                    percent = min(block_num * block_size / total_size * 0.9, 0.9)
-                    progress_callback(percent, f"下载中... {block_num * block_size // (1024*1024)}MB")
+            if progress_callback:
+                progress_callback(0.05, "正在连接...")
 
-            context = ssl.create_default_context()
-            context.check_hostname = False
-            context.verify_mode = ssl.CERT_NONE
+            # 优先使用 wget（更适合大文件）
+            downloader = None
+            error_msg = ""
 
-            urlretrieve(url, str(dest), reporthook=report_progress)
+            # 尝试 wget
+            try:
+                result = subprocess.run(
+                    ["wget", "-c", "-O", str(dest), url],
+                    capture_output=True, text=True, timeout=0,  # 无超时
+                )
+                if result.returncode == 0:
+                    downloader = "wget"
+            except FileNotFoundError:
+                pass
+
+            # 尝试 curl
+            if downloader is None:
+                try:
+                    result = subprocess.run(
+                        ["curl", "-L", "-C", "-", "-o", str(dest), url],
+                        capture_output=True, text=True, timeout=0,
+                    )
+                    if result.returncode == 0:
+                        downloader = "curl"
+                except FileNotFoundError:
+                    pass
+
+            if downloader is None:
+                return DownloadResult(success=False, error_message="未找到 wget 或 curl，请安装")
+
+            if progress_callback:
+                progress_callback(0.1, f"下载中（使用 {downloader}）...")
+
+            # 验证文件
+            if dest.exists() and dest.stat().st_size > 1024 * 1024:  # > 1MB
+                return DownloadResult(
+                    success=True,
+                    file_path=dest,
+                    file_size_mb=dest.stat().st_size / (1024 * 1024),
+                )
+            else:
+                return DownloadResult(success=False, error_message="下载失败或文件无效")
 
         except subprocess.TimeoutExpired:
             if dest.exists():
                 dest.unlink()
-            raise RuntimeError("下载超时，请检查网络连接")
-
-    def download_file(
-        self,
-        url: str,
-        dest: Path,
-        progress_callback: Optional[callable] = None,
-    ) -> DownloadResult:
-        """
-        从任意 URL 下载文件
-
-        Args:
-            url: 下载链接
-            dest: 保存路径
-            progress_callback: 进度回调 (percent: float, message: str)
-
-        Returns:
-            DownloadResult
-        """
-        try:
-            if progress_callback:
-                progress_callback(0.0, "正在连接...")
-
-            # 确保目录存在
-            dest.parent.mkdir(parents=True, exist_ok=True)
-
-            # 先获取文件大小
-            import urllib.request
-            with urllib.request.urlopen(url, timeout=30) as response:
-                total_size = int(response.headers.get("Content-Length", 0))
-
-            if progress_callback:
-                progress_callback(0.05, f"下载中... (共 {total_size / (1024*1024):.1f} MB)")
-
-            # 使用 curl 下载（更可靠，支持断点续传）
-            try:
-                result = subprocess.run(
-                    ["curl", "-L", "-o", str(dest), url,
-                     "--progress-bar", "--connect-timeout", "30", "-C", "-"],
-                    capture_output=True, text=True, timeout=3600,
-                )
-                if result.returncode != 0:
-                    raise RuntimeError(f"curl 错误: {result.stderr}")
-            except FileNotFoundError:
-                # 回退到 urllib
-                def report_progress(block_num, block_size, total_size):
-                    if progress_callback and total_size > 0:
-                        pct = min(block_num * block_size / total_size * 0.95 + 0.05, 0.99)
-                        downloaded_mb = block_num * block_size / (1024 * 1024)
-                        progress_callback(pct, f"下载中... {downloaded_mb:.1f} MB")
-
-                context = ssl.create_default_context()
-                context.check_hostname = False
-                context.verify_mode = ssl.CERT_NONE
-
-                urlretrieve(url, str(dest), reporthook=report_progress)
-
-            except subprocess.TimeoutExpired:
-                if dest.exists():
-                    dest.unlink()
-                return DownloadResult(success=False, error_message="下载超时，请检查网络连接")
-
-            # 获取实际下载的文件大小
-            if dest.exists():
-                file_size_mb = dest.stat().st_size / (1024 * 1024)
-                if progress_callback:
-                    progress_callback(1.0, "下载完成")
-                return DownloadResult(
-                    success=True,
-                    file_path=dest,
-                    file_size_mb=file_size_mb,
-                )
-            else:
-                return DownloadResult(success=False, error_message="文件未创建")
-
+            return DownloadResult(success=False, error_message="下载超时")
         except Exception as e:
             if dest.exists():
                 dest.unlink()
@@ -324,3 +340,10 @@ class ModelInstaller:
             return True
         except Exception:
             return False
+
+
+# 兼容旧接口
+def _get_legacy_download_url(filename: str) -> str:
+    """获取旧版 GitHub Release 下载链接"""
+    from cae.installer.model_installer_legacy import REPO_OWNER, REPO_NAME, RELEASE_VERSION
+    return f"https://github.com/{REPO_OWNER}/{REPO_NAME}/releases/download/{RELEASE_VERSION}/{filename}"

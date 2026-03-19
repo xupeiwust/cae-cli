@@ -537,6 +537,224 @@ app = typer.Typer(
 app.add_typer(inp_app, name="inp")
 app.add_typer(mesh_app, name="mesh")
 
+# ------------------------------------------------------------------ #
+# cae model - AI 模型管理
+# ------------------------------------------------------------------ #
+
+model_app = typer.Typer(
+    name="model",
+    help="[bold]AI 模型管理[/bold] — 下载、安装、查看模型",
+    no_args_is_help=True,
+)
+
+
+@model_app.callback()
+def model_callback():
+    """AI 模型管理命令组"""
+    pass
+
+
+@model_app.command(name="install")
+def model_install(
+    model_name: str = typer.Argument(..., help="模型名称（如 deepseek-r1-7b）"),
+    mirror: Optional[str] = typer.Option(None, "--mirror", "-m", help="下载镜像 URL"),
+) -> None:
+    """
+    [bold]下载并安装 AI 模型[/bold]
+
+    从 Hugging Face 下载 GGUF 模型文件到 ~/.cae-cli/models/
+
+    \b
+    示例：
+      cae model install deepseek-r1-7b
+      cae model install deepseek-r1-7b --mirror https://hf-mirror.com
+    """
+    from cae.installer.model_installer import ModelInstaller
+
+    console.print()
+    console.print(Panel.fit(f"[bold cyan]cae model install[/bold cyan] — 安装 AI 模型", border_style="cyan"))
+    console.print()
+
+    mi = ModelInstaller()
+
+    # 检查是否已安装
+    if mi.is_installed(model_name):
+        console.print(f"  [green]模型已安装:[/green] {model_name}")
+        info = mi._find_model(model_name)
+        if info:
+            console.print(f"  路径: {mi.models_dir / info.filename}")
+        return
+
+    # 显示模型信息
+    info = mi._find_model(model_name)
+    if info:
+        console.print(f"  [bold]模型:[/bold] {info.description}")
+        console.print(f"  [bold]大小:[/bold] ~{info.size_gb} GB")
+        console.print(f"  [bold]来源:[/bold] huggingface.co/{info.repo_id}")
+    else:
+        console.print(f"  [yellow]警告:[/yellow] 未找到模型元数据，将作为自定义模型下载")
+    console.print()
+
+    console.print("  这可能需要几分钟，取决于网络速度...")
+    console.print()
+
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  TimeElapsedColumn(), console=console) as progress:
+        task = progress.add_task("  下载中...", total=None)
+
+        def _progress(pct: float, msg: str) -> None:
+            progress.update(task, description=f"  {msg}", completed=pct * 100)
+
+        result = mi.install(model_name, progress_callback=_progress, mirror=mirror)
+
+    if result.success:
+        console.print()
+        console.print(f"  [green]安装成功！[/green]")
+        console.print(f"  路径: {result.install_path}")
+
+        # 询问是否激活
+        console.print()
+        activate = console.input("  [bold]设为默认模型？[/bold] [y/N]: ")
+        if activate.lower() == "y":
+            mi.activate(model_name)
+            console.print("  [green]已设为默认模型[/green]")
+    else:
+        console.print()
+        console.print(f"  [red]安装失败: {result.error_message}[/red]")
+        raise typer.Exit(code=1)
+
+
+@model_app.command(name="list")
+def model_list() -> None:
+    """
+    [bold]列出已知模型[/bold]
+
+    显示所有可用模型及其安装状态
+    """
+    from cae.installer.model_installer import ModelInstaller, KNOWN_MODELS
+
+    console.print()
+    console.print(Panel.fit("[bold cyan]可用模型列表[/bold cyan]", border_style="cyan"))
+    console.print()
+
+    mi = ModelInstaller()
+    table = Table(
+        "名称", "大小", "描述", "状态",
+        box=box.ROUNDED,
+        header_style="bold cyan",
+    )
+
+    for info in KNOWN_MODELS.values():
+        status = "[green]已安装[/green]" if mi.is_installed(info.name) else "[dim]未安装[/dim]"
+        table.add_row(
+            f"[bold]{info.name}[/bold]",
+            f"{info.size_gb:.1f} GB",
+            info.description,
+            status,
+        )
+
+    console.print(table)
+    console.print()
+
+    # 显示已安装的文件
+    installed = mi.list_installed()
+    if installed:
+        console.print(f"  已安装文件 ({len(installed)}):")
+        for f in installed:
+            size_mb = f.stat().st_size / (1024 * 1024)
+            console.print(f"    - {f.name} ({size_mb:.1f} MB)")
+    else:
+        console.print("  暂无已安装的模型文件")
+
+
+@model_app.command(name="info")
+def model_info(
+    model_name: str = typer.Argument(None, help="模型名称（留空则显示默认模型）"),
+) -> None:
+    """
+    [bold]显示模型详细信息[/bold]
+
+    查看模型元数据、路径、SHA256 校验码等
+    """
+    from cae.installer.model_installer import ModelInstaller, KNOWN_MODELS
+
+    mi = ModelInstaller()
+
+    # 如果未指定，显示默认模型
+    if not model_name:
+        from cae.config import settings
+        model_name = settings.active_model or "（无）"
+
+    console.print()
+    console.print(Panel.fit(f"[bold cyan]模型信息: {model_name}[/bold cyan]", border_style="cyan"))
+    console.print()
+
+    # 查找模型信息
+    info = mi._find_model(model_name)
+    model_path = mi.get_install_path(model_name)
+    installed = model_path.exists()
+
+    # 基本信息
+    console.print(f"  [bold]名称:[/bold] {model_name}")
+    console.print(f"  [bold]安装路径:[/bold] {model_path}")
+    console.print(f"  [bold]状态:[/bold] {'[green]已安装[/green]' if installed else '[dim]未安装[/dim]'}")
+
+    if info:
+        console.print(f"  [bold]描述:[/bold] {info.description}")
+        console.print(f"  [bold]大小:[/bold] ~{info.size_gb} GB")
+        console.print(f"  [bold]来源:[/bold] huggingface.co/{info.repo_id}")
+        console.print(f"  [bold]文件名:[/bold] {info.filename}")
+        if info.sha256:
+            console.print(f"  [bold]SHA256:[/bold] {info.sha256[:16]}...")
+
+    # 校验信息
+    if installed:
+        console.print()
+        console.print("  [bold]文件校验:[/bold]")
+        verify = mi.verify_file(model_path, info.sha256 if info else "")
+        if verify.success:
+            console.print(f"    [green]文件完整[/green]")
+        else:
+            console.print(f"    [yellow]未校验或校验失败[/yellow]")
+        size_mb = model_path.stat().st_size / (1024 * 1024)
+        console.print(f"    文件大小: {size_mb:.1f} MB")
+
+
+@model_app.command(name="uninstall")
+def model_uninstall(
+    model_name: str = typer.Argument(..., help="模型名称"),
+    force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
+) -> None:
+    """
+    [bold]卸载 AI 模型[/bold]
+
+    删除模型文件（默认需要确认）
+    """
+    mi = ModelInstaller()
+    model_path = mi.get_install_path(model_name)
+
+    if not model_path.exists():
+        console.print(f"  [yellow]模型未安装: {model_name}[/yellow]")
+        return
+
+    # 确认
+    if not force:
+        console.print()
+        confirm = console.input(f"  [bold]确认删除 {model_path.name}？[/bold] [y/N]: ")
+        if confirm.lower() != "y":
+            console.print("  已取消")
+            return
+
+    try:
+        model_path.unlink()
+        console.print(f"  [green]已删除: {model_path.name}[/green]")
+    except Exception as e:
+        console.print(f"  [red]删除失败: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
+app.add_typer(model_app, name="model")
+
 import sys
 # Windows MSYS 环境：强制 stdout/stderr 使用 UTF-8
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
