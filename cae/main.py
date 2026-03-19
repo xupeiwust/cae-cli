@@ -353,6 +353,93 @@ def suggest(
     else:
         console.print("  [green]未发现问题，无需修改建议[/green]\n")
 
+
+# ------------------------------------------------------------------ #
+# cae inp list — 浏览关键词分类
+# ------------------------------------------------------------------ #
+
+@inp_app.command()
+def list(
+    category: Optional[str] = typer.Argument(
+        None,
+        help="分类名称（如 Mesh/Properties/Step）",
+        show_default=False,
+    ),
+    keyword: Optional[str] = typer.Argument(
+        None,
+        help="关键词名称（如 *NODE）",
+        show_default=False,
+    ),
+) -> None:
+    """[bold]浏览关键词分类[/bold] — 查看所有分类或指定分类下的关键词"""
+    from cae.inp import list_keywords, get_keyword_info
+
+    if keyword:
+        # 显示指定关键词的详细信息
+        info = get_keyword_info(keyword)
+        if not info["known"]:
+            console.print(f"  [yellow]未知关键词: {keyword}[/yellow]")
+            return
+
+        console.print()
+        console.print(Panel.fit(f"[bold cyan]{info['keyword']}[/bold cyan]", border_style="cyan"))
+        console.print(f"  路径: {' > '.join(info['path'])}")
+        console.print(f"  分类: {info['category']}")
+        if info["args"]:
+            console.print("  参数:")
+            for arg in info["args"]:
+                req_mark = "[red]*[/red]" if arg.get("required") else "  "
+                form = arg.get("form", "Line")
+                opts = f" ({', '.join(arg['options'])})" if arg.get("options") else ""
+                console.print(f"    {req_mark} {arg['name']}: {form}{opts}")
+                if arg.get("default"):
+                    console.print(f"        默认值: {arg['default']}")
+        console.print()
+        return
+
+    if category:
+        # 显示指定分类下的关键词
+        kws = list_keywords(category)
+        if not kws:
+            available = [c for c in _get_inp_categories() if not c.startswith("_")]
+            console.print(f"  [yellow]未知分类: {category}[/yellow]")
+            console.print(f"  可用分类: {', '.join(available)}")
+            return
+
+        console.print()
+        console.print(Panel.fit(f"[bold cyan]{category}[/bold cyan] — {len(kws)} 个关键词", border_style="cyan"))
+        for kw in sorted(kws):
+            console.print(f"  {kw}")
+        console.print()
+    else:
+        # 显示所有分类
+        tree = _get_inp_tree()
+        console.print()
+        console.print(Panel.fit("[bold cyan]关键词分类[/bold cyan]", border_style="cyan"))
+        for coll_name, coll_data in tree.get("Collections", {}).items():
+            if coll_name.startswith("_"):
+                continue
+            kws = list_keywords(coll_name)
+            console.print(f"\n  [bold]{coll_name}[/bold] ({len(kws)})")
+            # 显示前5个关键词作为示例
+            sample = sorted(kws)[:5]
+            for kw in sample:
+                console.print(f"    {kw}")
+            if len(kws) > 5:
+                console.print(f"    ... 还有 {len(kws) - 5} 个")
+
+
+def _get_inp_tree():
+    from cae.inp import load_kw_tree
+    return load_kw_tree()
+
+
+def _get_inp_categories():
+    from cae.inp import load_kw_tree
+    tree = load_kw_tree()
+    return list(tree.get("Collections", {}).keys())
+
+
 # ------------------------------------------------------------------ #
 # App 初始化
 # ------------------------------------------------------------------ #
