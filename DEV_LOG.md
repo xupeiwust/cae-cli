@@ -126,3 +126,41 @@ Suggestions count: 1
   - 缓存优化：`CalculixSolver._find_binary()` 结果被缓存，避免重复文件系统搜索
   - 模块结构清晰：重工具函数归入 `_utils.py`，公共 API 显式导出
   - 懒加载完善：所有 heavy dependencies 均通过 `__getattr__` 按需加载
+
+---
+
+## 2026年3月19日（傍晚）
+
+### 新增：`cae/inp/` 模块 — .inp 解析与修改
+
+- **问题描述**：用户希望支持"直接修改已有 .inp 文件"，参考 cae-master 的 kw_list.xml 结构。
+
+- **解决方法**：
+
+  1. **新建 `cae/inp/kw_list.json`**：
+     - 从 cae-master `config/kw_list.xml` 转换而来
+     - 135 个关键词的完整参数定义
+     - 支持 form（Line/Int/Float/Bool/Combo/Text）、required、options、default 等属性
+
+  2. **新建 `cae/inp/__init__.py`**：
+
+     - `Block` 数据类：保留原始 INP 文本结构（comments/lead_line/data_lines），支持 `get_param()` / `set_param()` 获取和修改参数
+
+     - `InpParser` 解析器：
+       - `read_lines()` 递归处理 `*INCLUDE`
+       - `split_on_blocks()` 分割为 Block 列表
+       - `parse_params()` 解析关键词参数
+
+     - `InpModifier` 修改器：
+       - `find_blocks()` / `find_block()` 按关键词 + NAME 精确定位
+       - `update_blocks()` 修改参数或数据行
+       - `insert_block()` 插入新块
+       - `delete_blocks()` 删除块
+       - `write()` 重新生成 INP 文件
+
+     - `replace_values()` 辅助函数：替换数据行中的数值
+
+- **解决效果**：
+  - 完整解析 .inp 文件，保留原始格式
+  - 支持按关键词 + 参数精确定位修改
+  - 可扩展：kw_list.json 可随时从 cae-master 同步更新
