@@ -57,6 +57,15 @@ class InstallResult:
     error_message: Optional[str] = None
 
 
+@dataclass
+class DownloadResult:
+    """下载结果"""
+    success: bool
+    file_path: Optional[Path] = None
+    file_size_mb: float = 0.0
+    error_message: Optional[str] = None
+
+
 class ModelInstaller:
     """AI 模型安装器"""
 
@@ -227,6 +236,84 @@ class ModelInstaller:
             if dest.exists():
                 dest.unlink()
             raise RuntimeError("下载超时，请检查网络连接")
+
+    def download_file(
+        self,
+        url: str,
+        dest: Path,
+        progress_callback: Optional[callable] = None,
+    ) -> DownloadResult:
+        """
+        从任意 URL 下载文件
+
+        Args:
+            url: 下载链接
+            dest: 保存路径
+            progress_callback: 进度回调 (percent: float, message: str)
+
+        Returns:
+            DownloadResult
+        """
+        try:
+            if progress_callback:
+                progress_callback(0.0, "正在连接...")
+
+            # 确保目录存在
+            dest.parent.mkdir(parents=True, exist_ok=True)
+
+            # 先获取文件大小
+            import urllib.request
+            with urllib.request.urlopen(url, timeout=30) as response:
+                total_size = int(response.headers.get("Content-Length", 0))
+
+            if progress_callback:
+                progress_callback(0.05, f"下载中... (共 {total_size / (1024*1024):.1f} MB)")
+
+            # 使用 curl 下载（更可靠，支持断点续传）
+            try:
+                result = subprocess.run(
+                    ["curl", "-L", "-o", str(dest), url,
+                     "--progress-bar", "--connect-timeout", "30", "-C", "-"],
+                    capture_output=True, text=True, timeout=3600,
+                )
+                if result.returncode != 0:
+                    raise RuntimeError(f"curl 错误: {result.stderr}")
+            except FileNotFoundError:
+                # 回退到 urllib
+                def report_progress(block_num, block_size, total_size):
+                    if progress_callback and total_size > 0:
+                        pct = min(block_num * block_size / total_size * 0.95 + 0.05, 0.99)
+                        downloaded_mb = block_num * block_size / (1024 * 1024)
+                        progress_callback(pct, f"下载中... {downloaded_mb:.1f} MB")
+
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+
+                urlretrieve(url, str(dest), reporthook=report_progress)
+
+            except subprocess.TimeoutExpired:
+                if dest.exists():
+                    dest.unlink()
+                return DownloadResult(success=False, error_message="下载超时，请检查网络连接")
+
+            # 获取实际下载的文件大小
+            if dest.exists():
+                file_size_mb = dest.stat().st_size / (1024 * 1024)
+                if progress_callback:
+                    progress_callback(1.0, "下载完成")
+                return DownloadResult(
+                    success=True,
+                    file_path=dest,
+                    file_size_mb=file_size_mb,
+                )
+            else:
+                return DownloadResult(success=False, error_message="文件未创建")
+
+        except Exception as e:
+            if dest.exists():
+                dest.unlink()
+            return DownloadResult(success=False, error_message=str(e))
 
     def uninstall(self, model_name: str) -> bool:
         """卸载模型"""

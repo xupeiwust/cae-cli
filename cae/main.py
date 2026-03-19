@@ -1533,6 +1533,77 @@ def install(
     console.print("  现在可以运行 [bold]`cae solve`[/bold] 开始仿真\n")
 
 
+# ------------------------------------------------------------------ #
+# cae download
+# ------------------------------------------------------------------ #
+
+@app.command(name="download")
+def download_file(
+    url: str = typer.Argument(..., help="下载链接（支持直链、网盘链接等）"),
+    output: Optional[Path] = typer.Option(None, "-o", "--output", help="输出文件路径"),
+    filename: Optional[str] = typer.Option(None, "-n", "--name", help="指定保存的文件名"),
+) -> None:
+    """
+    [bold]下载文件（AI 模型等大文件）[/bold]
+
+    支持从任意 URL 下载文件，自动命名，进度显示。
+
+    \b
+    示例：
+      cae download "https://example.com/model.gguf"
+      cae download "https://example.com/model.gguf" -o models/
+      cae download "https://example.com/model.gguf" -n my_model.gguf
+    """
+    from cae.installer.model_installer import ModelInstaller
+
+    mi = ModelInstaller()
+
+    # 确定输出路径
+    if output and output.is_dir():
+        # 目录模式：结合 filename 生成最终路径
+        name = filename or url.split("/")[-1].split("?")[0]
+        dest = output / name
+    elif output:
+        # 指定具体文件路径
+        dest = output
+        if filename:
+            console.print("[yellow]警告: -o 已指定文件路径，-n 参数将被忽略[/yellow]")
+    else:
+        # 默认保存到 models 目录
+        name = filename or url.split("/")[-1].split("?")[0]
+        dest = mi.models_dir / name
+
+    # 确保目录存在
+    dest.parent.mkdir(parents=True, exist_ok=True)
+
+    console.print()
+    console.print(f"  下载地址: [cyan]{url}[/cyan]")
+    console.print(f"  保存位置: [cyan]{dest}[/cyan]")
+    console.print()
+
+    try:
+        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                      TimeElapsedColumn(), console=console) as progress:
+            task = progress.add_task("  连接中...", total=None)
+
+            def _progress(pct: float, msg: str) -> None:
+                progress.update(task, description=f"  {msg}", completed=pct * 100)
+
+            result = mi.download_file(url, dest, progress_callback=_progress)
+
+        if result.success:
+            console.print()
+            console.print(f"  [green]下载完成！[/green]  文件: {result.file_path}  大小: {result.file_size_mb:.1f} MB")
+        else:
+            console.print()
+            console.print(f"  [red]下载失败: {result.error_message}[/red]")
+            raise typer.Exit(code=1)
+    except Exception as e:
+        console.print()
+        console.print(f"  [red]错误: {e}[/red]")
+        raise typer.Exit(code=1)
+
+
 @app.command()
 def explain(
     results_dir: Optional[Path] = typer.Argument(None, help="结果目录"),
