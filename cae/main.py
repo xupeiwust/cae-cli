@@ -734,6 +734,59 @@ def list_solvers_cmd() -> None:
 
 
 # ------------------------------------------------------------------ #
+# cae test
+# ------------------------------------------------------------------ #
+
+@app.command(name="test")
+def test_official(
+    test_dir: Optional[Path] = typer.Option(
+        None, "--test-dir",
+        help="测试文件目录（默认: ccx_2.23.test/CalculiX/ccx_2.23/test）",
+    ),
+    sample: int = typer.Option(
+        10, "--sample",
+        help="Phase 2/3 采样测试的文件数量",
+    ),
+    quiet: bool = typer.Option(False, "--quiet", help="静默模式"),
+) -> None:
+    """
+    [bold]运行 CalculiX 官方测试集批量测试[/bold]
+
+    使用 ccx_2.23.test 测试集验证 INP 解析、求解和格式转换功能。
+
+    示例：
+      cae test
+      cae test --sample 20
+      cae test --test-dir /path/to/test/files
+    """
+    from cae.test.official import run_official_tests
+
+    try:
+        result = run_official_tests(
+            test_dir=test_dir,
+            sample_size=sample,
+            verbose=not quiet,
+        )
+        console.print()
+        console.print(Panel.fit(
+            f"[bold]测试完成[/bold]\n"
+            f"Phase 1 (inp info): {result.phase1.ok}/{result.phase1.total} OK\n"
+            f"Phase 2 (solve):    {result.phase2.ok}/{result.phase2.total} OK\n"
+            f"Phase 3 (convert):  {result.phase3.ok}/{result.phase3.total} OK",
+            border_style="green" if result.total_pass else "yellow",
+        ))
+
+        if not result.total_pass:
+            raise typer.Exit(code=1)
+    except FileNotFoundError as e:
+        console.print(f"[red]错误: {e}[/red]")
+        raise typer.Exit(code=2)
+    except Exception as e:
+        console.print(f"[red]错误: {e}[/red]")
+        raise typer.Exit(code=2)
+
+
+# ------------------------------------------------------------------ #
 # cae info
 # ------------------------------------------------------------------ #
 
