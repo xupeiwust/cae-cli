@@ -5,7 +5,7 @@
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.0.0-blue.svg)](https://pypi.org/project/cae-cxx/)
+[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.1.0-blue.svg)](https://pypi.org/project/cae-cxx/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Test](https://img.shields.io/badge/Tests-638%2F638-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
