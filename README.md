@@ -5,7 +5,7 @@
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-v1.0.0-blue.svg)](https://pypi.org/project/cae-cli/)
+[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.0.0-blue.svg)](https://pypi.org/project/cae-cxx/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Test](https://img.shields.io/badge/Tests-638%2F638-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
@@ -34,7 +34,7 @@
 
 ```bash
 # 1. 安装 (30 秒)
-pip install cae-cli && cae install
+pip install cae-cxx && cae install
 
 # 2. 生成悬臂梁模板
 cae inp template cantilever_beam -o beam.inp
@@ -92,6 +92,7 @@ cae solve beam.inp && cae view results/
 | 📊 AI 解读 | `cae explain results/` | 位移/应力分析 |
 | 🔍 AI 诊断 | `cae diagnose results/` | 收敛性/网格质量 |
 | 💡 AI 建议 | `cae suggest results/` | 优化方案 |
+| 📄 PDF 报告 | `cae report results/` | 最大位移/应力/安全系数/云图，一键发给导师 |
 
 ### 格式转换
 
@@ -107,10 +108,13 @@ cae solve beam.inp && cae view results/
 
 ```bash
 # 基础安装
-pip install cae-cli
+pip install cae-cxx
 
-# 完整安装（含 AI + 网格）
-pip install cae-cli[ai,mesh]
+# 完整安装（含 AI + 网格 + PDF 报告）
+pip install cae-cxx[ai,mesh,report]
+
+# 仅安装 PDF 报告支持
+pip install cae-cxx[report]
 ```
 
 ### 安装求解器
@@ -175,6 +179,18 @@ cae test --sample 20        # 采样 20 个
 cae test --quiet             # 静默
 ```
 
+### `cae report` — PDF 报告
+
+```bash
+cae report results/                         # 生成报告（默认输出到 results/report_*.pdf）
+cae report results/ -o report.pdf           # 指定输出路径
+cae report results/ -i model.inp           # 附带 INP 材料属性
+cae report results/ -y 350 -j beam_test     # 手动指定屈服强度和工况名
+cae report results/ -s 100                  # 调整变形放大倍数（云图）
+```
+
+> 需要 weasyprint：`pip install cae-cxx[report]`
+
 ### 其他命令
 
 ```bash
@@ -222,7 +238,7 @@ cae inp template flat_plate -o plate.inp --Lx=200 --Ly=100 --pressure=5.0
 
 **Q: 和 ANSYS/Abaqus 有什么区别？**
 
-| 对比 | cae-cli | ANSYS/Abaqus |
+| 对比 | cae-cxx | ANSYS/Abaqus |
 |------|---------|--------------|
 | 价格 | 免费 | 几万~几十万/年 |
 | 功能 | 核心 FEA | 完整多物理场 |
@@ -281,7 +297,10 @@ cae-cli/
 │   ├── viewer/              # 可视化
 │   │   ├── frd_parser.py   # FRD 解析
 │   │   ├── vtk_export.py   # VTK 导出
-│   │   └── mesh_check.py   # 网格预览
+│   │   ├── pyvista_renderer.py  # PyVista 渲染引擎
+│   │   ├── mesh_check.py   # 网格预览 HTML
+│   │   ├── html_generator.py   # HTML 报告生成器
+│   │   └── pdf_report.py   # PDF 报告生成器
 │   ├── ai/                  # AI 功能
 │   │   ├── llm_client.py   # LLM 接口
 │   │   ├── explain.py      # 结果解读

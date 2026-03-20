@@ -1973,6 +1973,117 @@ def diagnose(
     console.print()
 
 
+@app.command(name="report")
+def generate_report(
+    results_dir: Optional[Path] = typer.Argument(
+        None,
+        help="结果目录（含 .frd 文件）",
+    ),
+    output: Optional[Path] = typer.Option(
+        None, "-o", "--output", help="输出 PDF 路径（默认 results/report_YYYYMMDD_HHMMSS.pdf）",
+    ),
+    inp_file: Optional[Path] = typer.Option(
+        None, "-i", "--inp", help="INP 文件路径（读取材料属性）",
+    ),
+    yield_strength: Optional[float] = typer.Option(
+        None, "-y", "--yield", help="手动指定屈服强度（MPa），覆盖 INP 值",
+    ),
+    job_name: Optional[str] = typer.Option(
+        None, "-j", "--job", help="工况名称",
+    ),
+    scale: float = typer.Option(
+        50.0, "-s", "--scale", help="变形放大倍数（云图）",
+    ),
+) -> None:
+    """
+    [bold]生成 PDF 仿真报告[/bold]
+
+    包含最大位移、最大应力、安全系数、云图截图，
+    一键发给导师或甲方。
+
+    \b
+    示例：
+      cae report results/
+      cae report results/ -o report.pdf -i model.inp
+      cae report results/ -y 350 -j cantilever_beam
+    """
+    from cae.viewer.pdf_report import generate_pdf_report
+
+    console.print()
+    console.print(
+        Panel.fit("[bold cyan]cae report[/bold cyan] — 生成 PDF 仿真报告", border_style="cyan"),
+    )
+    console.print()
+
+    if results_dir is None:
+        raw = typer.prompt("  请输入结果目录路径")
+        results_dir = Path(raw.strip())
+
+    results_dir = Path(results_dir)
+    if not results_dir.exists():
+        err_console.print(f"\n  结果目录不存在: {results_dir}\n")
+        raise typer.Exit(1)
+
+    frd_files = list(results_dir.glob("*.frd"))
+    if not frd_files:
+        err_console.print(f"\n  结果目录中未找到 .frd 文件: {results_dir}\n")
+        raise typer.Exit(1)
+
+    # 默认输出路径
+    if output is None:
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        output = results_dir / f"report_{timestamp}.pdf"
+
+    console.print(f"  结果目录: [cyan]{results_dir}[/cyan]")
+    console.print(f"  INP 文件: [cyan]{inp_file or '（未指定，使用默认材料）'}[/cyan]")
+    console.print(f"  屈服强度: [cyan]{yield_strength or '（默认 250 MPa）'}[/cyan]")
+    console.print(f"  输出路径: [cyan]{output}[/cyan]")
+    console.print()
+
+    try:
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("{task.description}"),
+            TimeElapsedColumn(),
+            console=console,
+        ) as progress:
+            task = progress.add_task("  解析结果文件...", total=None)
+
+            result_path = generate_pdf_report(
+                results_dir=results_dir,
+                output_path=output,
+                inp_file=inp_file,
+                job_name=job_name or "",
+                yield_strength=yield_strength,
+                scale_factor=scale,
+            )
+
+            progress.update(task, description="  生成报告中...", completed=50)
+
+        import os
+        size_mb = os.path.getsize(result_path) / (1024 * 1024)
+        console.print()
+        console.print(f"  [green]✓ PDF 报告已生成！[/green]  {result_path}  ({size_mb:.1f} MB)")
+        console.print()
+
+    except RuntimeError as exc:
+        if "weasyprint" in str(exc):
+            err_console.print(
+                "\n  PDF 生成需要 weasyprint 依赖。\n"
+                "  请运行以下命令安装：\n\n"
+                "    [bold]pip install cae-cli[report][/bold]\n"
+                "  或\n"
+                "    [bold]pip install weasyprint>=60.0[/bold]\n",
+            )
+        else:
+            err_console.print(f"\n  [red]错误: {exc}[/red]\n")
+        raise typer.Exit(1)
+    except Exception as exc:
+        err_console.print(f"\n  [red]报告生成失败: {exc}[/red]\n")
+        raise typer.Exit(1)
+
+
 # ------------------------------------------------------------------ #
 # 工具函数
 # ------------------------------------------------------------------ #

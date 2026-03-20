@@ -1,5 +1,39 @@
 # DEV_LOG.md
 
+## 2026年3月20日
+
+### 新增：CAE-CLI PDF 仿真报告功能（`cae report`）
+
+- **问题描述**：学生用户需要一键生成仿真报告（最大位移、最大应力、安全系数、云图截图）发给导师或甲方，ParaView Glance 的原始 VTK 没有自动数值摘要。
+
+- **解决方法**：
+
+  1. 新增 `cae/viewer/pdf_report.py`：
+     - `PdfReportGenerator` 类：完整的 PDF 报告生成流程
+     - `generate_pdf_report()` 便捷入口函数
+     - 支持从 INP 文件读取材料属性（弹性模量、屈服强度、泊松比）
+     - 支持手动指定屈服强度覆盖
+     - 自动渲染位移云图 + Von Mises 应力云图（PyVista 截图）
+     - 自动计算安全系数和应力利用率
+     - 基于 WeasyPrint HTML→PDF 转换
+
+  2. 更新 `pyproject.toml`：
+     - 新增 `report` 可选依赖：`weasyprint>=60.0`
+
+  3. 更新 `main.py`：
+     - 新增 `report` 命令：`cae report <results_dir> [-o output.pdf] [-i inp_file] [-y yield_strength] [-j job_name] [-s scale]`
+
+  4. 更新 `README.md`：
+     - `安装` 章节增加 `pip install cae-cxx[report]` 说明
+     - `AI 助手` 章节增加 `cae report` 入口
+     - `命令速查` 章节增加 `cae report` 详细用法
+     - `项目结构` 增加 `pdf_report.py` 和 `html_generator.py` 说明
+
+- **解决效果**：
+  - 一条命令生成专业 PDF 报告，包含所有关键数值和云图
+  - 安全系数自动计算（颜色标记：绿=安全、黄=警告、红=危险）
+  - 适合直接发给导师或甲方
+
 ## 2026年3月19日
 
 ### 新增：CAE-CLI AI 模式功能

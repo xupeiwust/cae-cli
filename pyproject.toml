@@ -3,15 +3,15 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "cae-cli"
-version = "0.2.0"
+name = "cae-cxx"
+version = "1.0.0"
 description = "轻量化 CAE 命令行工具 — 一条命令跑仿真，一个链接看结果"
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.10"
 keywords = ["cae", "fea", "simulation", "calculix", "cli"]
 classifiers = [
-    "Development Status :: 2 - Pre-Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3.10",
@@ -31,6 +31,7 @@ dependencies = [
 ai   = ["requests>=2.31", "cadquery>=2.4"]
 mesh = ["gmsh>=4.12", "meshio>=5.3"]
 dev  = ["pytest>=8.0", "pytest-cov>=5.0", "ruff>=0.4"]
+report = ["weasyprint>=60.0"]
 
 [project.scripts]
 cae = "cae.main:app"
