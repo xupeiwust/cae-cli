@@ -39,6 +39,8 @@ results/
 cxx.exe/
 test_ccx/
 test_ccx2/
+ccx_2.23.test/
+results_test/
 
 # AI models (downloaded separately)
 models/

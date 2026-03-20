@@ -16,6 +16,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import numpy.typing as npt
+
+from cae.enums import ResultLocation, FrdResultEntity
+
 
 @dataclass
 class FrdNodes:
@@ -32,18 +37,60 @@ class FrdElement:
 
 @dataclass
 class FrdResultStep:
-    """单个载荷步 / 时间步的结果。"""
+    """
+    单个载荷步 / 时间步的结果。
+
+    Attributes:
+        entity: 结果实体类型（DISP, STRESS, STRAIN 等）
+        step: 载荷步号
+        step_inc_no: 步内增量号（STATIC 为增量号，FREQUENCY 为模态号）
+        total_inc_no: 总增量号
+        time: 时间值
+        name: 字段名（与 entity 对应）
+        components: 分量名称列表
+        values: 字典，key=节点ID, value=分量值数组
+        node_ids: 节点 ID 列表
+        analysis_type: 分析类型：STATIC, FREQUENCY, BUCKLE 等
+        entity_location: 结果位置：NODAL, ELEMENT, INT_PNT
+    """
+
     step: int
     time: float
-    name: str            # 字段名，如 "DISP", "STRESS", "FORC"
+    name: str  # 字段名，如 "DISP", "STRESS"
     components: list[str]  # 分量名称列表
-    # values[节点索引] = [分量值, ...]
-    values: list[list[float]]
-    node_ids: list[int]  # 与 values 一一对应的节点编号
+    values: dict[int, np.ndarray]  # {节点ID: 分量值数组}
+    node_ids: list[int]  # 与 values 对应的节点编号
+    entity: FrdResultEntity  # 结果实体类型
+    step_inc_no: int = 0  # 步内增量号
+    total_inc_no: int = 0  # 总增量号
+    analysis_type: str = "STATIC"  # 分析类型
+    entity_location: ResultLocation = ResultLocation.NODAL  # 结果位置
+
+    def get_values_by_ids(self, ids: list[int]) -> npt.NDArray[np.float64]:
+        """
+        返回指定节点 ID 的结果值。
+
+        Args:
+            ids: 节点 ID 列表
+
+        Returns:
+            2D numpy 数组，shape=(len(ids), no_components)
+            如果节点不存在，对应行填充为零
+        """
+        no_comp = len(self.components) if self.components else 1
+        return np.array([
+            self.values.get(nid, np.zeros(no_comp)) for nid in ids
+        ])
 
 
 @dataclass
 class FrdData:
+    """
+    .frd 文件解析结果容器。
+
+    包含节点、单元和所有结果集。
+    """
+
     nodes: Optional[FrdNodes] = None
     elements: list[FrdElement] = field(default_factory=list)
     results: list[FrdResultStep] = field(default_factory=list)
@@ -66,6 +113,89 @@ class FrdData:
         if not matches:
             return None
         return matches[step]
+
+    def get_results_by(
+        self,
+        *,
+        entity: Optional[FrdResultEntity] = None,
+        name: Optional[str] = None,
+        step: Optional[int] = None,
+        step_inc_no: Optional[int] = None,
+        total_inc_no: Optional[int] = None,
+        time: Optional[float] = None,
+        analysis_type: Optional[str] = None,
+        entity_location: Optional[ResultLocation] = None,
+    ) -> list[FrdResultStep]:
+        """
+        按条件过滤结果集。
+
+        所有参数都是可选的，不指定的参数不参与过滤。
+        当 time 有值时，返回时间最接近的结果集。
+
+        Args:
+            entity: 结果实体类型（FrdResultEntity），如 DISP, STRESS
+            name: 字段名（不区分大小写，包含匹配），与 entity 二选一
+            step: 载荷步号
+            step_inc_no: 步内增量号
+            total_inc_no: 总增量号
+            time: 目标时间（返回时间最接近的结果集）
+            analysis_type: 分析类型（不区分大小写），如 "STATIC", "FREQUENCY"
+            entity_location: 结果位置（NODAL, ELEMENT, INT_PNT）
+
+        Returns:
+            符合条件的 FrdResultStep 列表
+        """
+        results = self.results
+
+        if entity is not None:
+            results = [r for r in results if r.entity == entity]
+
+        if name is not None:
+            results = [r for r in results if name.upper() in r.name.upper()]
+
+        if step is not None:
+            results = [r for r in results if r.step == step]
+
+        if step_inc_no is not None:
+            results = [r for r in results if r.step_inc_no == step_inc_no]
+
+        if total_inc_no is not None:
+            results = [r for r in results if r.total_inc_no == total_inc_no]
+
+        if analysis_type is not None:
+            results = [
+                r for r in results
+                if r.analysis_type.upper() == analysis_type.upper()
+            ]
+
+        if entity_location is not None:
+            results = [r for r in results if r.entity_location == entity_location]
+
+        if time is not None and results:
+            closest = min(results, key=lambda r: abs(r.time - time))
+            results = [closest]
+
+        return results
+
+    def get_available_times(self) -> list[float]:
+        """返回所有结果的时间列表（去重、排序）。"""
+        times = sorted({r.time for r in self.results})
+        return times
+
+    def get_result_names(self) -> list[str]:
+        """返回所有结果字段名称（去重）。"""
+        names = list({r.name for r in self.results})
+        return sorted(names)
+
+    def get_steps(self) -> list[int]:
+        """返回所有载荷步号（去重、排序）。"""
+        steps = sorted({r.step for r in self.results})
+        return steps
+
+    def get_entities(self) -> list[FrdResultEntity]:
+        """返回所有结果实体类型（去重）。"""
+        entities = list({r.entity for r in self.results})
+        return sorted(entities, key=lambda e: e.value)
 
 
 # ------------------------------------------------------------------ #
@@ -135,12 +265,33 @@ def parse_frd(frd_file: Path) -> FrdData:
 
         i += 1
 
+    # 填充 step_inc_no
+    _fill_step_inc_no(data.results)
+
     return data
 
 
 # ------------------------------------------------------------------ #
 # 内部解析函数
 # ------------------------------------------------------------------ #
+
+def _fill_step_inc_no(results: list[FrdResultStep]) -> None:
+    """
+    填充 step_inc_no（步内增量号）。
+
+    根据 pygccx 的逻辑：
+    - 当 step 变化时，重置增量计数
+    - step_inc_no = total_inc_no - last_inc_no_of_previous_step
+    """
+    last_step_no = 0
+    last_total_inc_no = 0
+
+    for rs in results:
+        if rs.step != last_step_no:
+            # 新步开始，重置
+            last_total_inc_no = rs.total_inc_no - 1
+            last_step_no = rs.step
+        rs.step_inc_no = rs.total_inc_no - last_total_inc_no
 
 def _parse_nodes(lines: list[str], start: int) -> tuple[int, FrdNodes]:
     """解析节点坐标块，返回 (下一行索引, FrdNodes)。"""
@@ -210,18 +361,18 @@ def _parse_elements(lines: list[str], start: int) -> tuple[int, list[FrdElement]
 def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResultStep]]:
     """解析单个结果块（位移、应力等）。"""
     header = lines[start]
-    # 解析字段名和时间
     # 格式示例："  100C                             DISP        1  0.00000E+00"
     parts = header.split()
-    # 字段名在固定位置
     field_name = "UNKNOWN"
     step = 1
     time = 0.0
+    analysis_type = "STATIC"
+    total_inc_no = 0
 
     if len(parts) >= 2:
         field_name = parts[1] if len(parts) > 1 else "UNKNOWN"
 
-    # 找 step 和 time
+    # 找 step, time, total_inc_no
     for j, p in enumerate(parts):
         try:
             v = int(p)
@@ -233,21 +384,36 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
         except ValueError:
             continue
 
+    # 尝试从固定宽度格式提取 total_inc_no（位置 58-63）
+    if len(header) >= 63:
+        try:
+            total_inc_no = int(header[58:63].strip())
+        except ValueError:
+            pass
+
+    # 尝试从固定宽度格式提取 analysis_type（位置 63-73）
+    if len(header) >= 74:
+        analysis_str = header[63:73].strip()
+        if analysis_str:
+            analysis_type = analysis_str
+
+    # 映射字段名到 FrdResultEntity
+    try:
+        entity = FrdResultEntity(field_name)
+    except ValueError:
+        entity = FrdResultEntity.DISP  # 默认值
+
     i = start + 1
     components: list[str] = []
     node_ids: list[int] = []
-    values: list[list[float]] = []
+    values: dict[int, np.ndarray] = {}
 
     while i < len(lines):
         line = lines[i]
 
         # 分量定义行
         if line.startswith(" -4"):
-            parts4 = line.split()
-            # 格式：" -4  <name>  <ncomp>  <irtype>"
-            if len(parts4) >= 2:
-                # 下面跟着分量名行
-                pass
+            pass
         elif line.startswith(" -5"):
             # 分量名行：" -5  D1  1  2  1  0"
             parts5 = line.split()
@@ -255,20 +421,15 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
                 components.append(parts5[1])
 
         elif line.startswith(" -1"):
-            # 结果数值行：" -1  <nid>  <v1>  <v2>  ..."
-            # 注意：CalculiX 有时会输出没有空格分隔的数字，如 "3-4.72724E+00" 或 "1.40337E-05-4.50989E-06"
-            # 使用正则表达式匹配所有科学计数法数字
-            import re
-            # 匹配科学计数法数字（包括可能连在一起的情况）
+            # 结果数值行
             number_pattern = r'[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?'
             matches = re.findall(number_pattern, line)
-            # matches[0] 是 "-1" (行类型), matches[1] 是 node_id, matches[2:] 是 values
             if len(matches) >= 3:
                 try:
-                    nid = int(matches[1])  # matches[0] is "-1" (line type)
-                    vals = [float(v) for v in matches[2:]]
+                    nid = int(matches[1])
+                    vals = np.array([float(v) for v in matches[2:]], dtype=np.float64)
                     node_ids.append(nid)
-                    values.append(vals)
+                    values[nid] = vals
                 except (ValueError, IndexError):
                     pass
 
@@ -281,6 +442,18 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
     if not node_ids:
         return i, None
 
+    # 根据 entity 类型推断 entity_location
+    # 节点结果：位移、力、反力
+    # 单元结果：应力、应变等（大多数在 ELEMENT 或 INT_PNT）
+    entity_location = ResultLocation.NODAL
+    if entity in (
+        FrdResultEntity.STRESS,
+        FrdResultEntity.STRAIN,
+        FrdResultEntity.MSTRESS,
+        FrdResultEntity.PEEQ,
+    ):
+        entity_location = ResultLocation.ELEMENT
+
     return i, FrdResultStep(
         step=step,
         time=time,
@@ -288,4 +461,9 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
         components=components,
         values=values,
         node_ids=node_ids,
+        entity=entity,
+        step_inc_no=0,  # 后续填充
+        total_inc_no=total_inc_no,
+        analysis_type=analysis_type,
+        entity_location=entity_location,
     )

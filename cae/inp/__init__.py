@@ -66,7 +66,7 @@ class Block:
     comments: list[str] = field(default_factory=list)
     lead_line: str = ""
     data_lines: list[str] = field(default_factory=list)
-    line_range: tuple[int, int] = field(default_factory=(0, 0), repr=False)
+    line_range: tuple[int, int] = field(default_factory=lambda: (0, 0), repr=False)
 
     # 解析后的参数 {参数名: 值}
     _params: dict[str, str] = field(default_factory=dict, repr=False)

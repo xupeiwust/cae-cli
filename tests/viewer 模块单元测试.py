@@ -319,3 +319,226 @@ class TestIndexHtml:
         names = {f.name for f in files}
         assert "beam.vtu" in names
         assert "frame.vtu" in names
+
+
+# ================================================================== #
+# 应力计算工具测试
+# ================================================================== #
+
+from cae.viewer._utils import (
+    von_mises,
+    get_principal_stresses,
+    get_principal_shear_stresses,
+    get_max_shear_stress,
+    get_worst_principal_stress,
+    get_stress_invariants,
+)
+
+
+class TestPrincipalStresses:
+    """主应力计算测试"""
+
+    def test_uniaxial_tension(self):
+        """单轴拉伸：σ1=100, σ2=σ3=0"""
+        stress = np.array([[100.0, 0, 0, 0, 0, 0]])
+        principal, _ = get_principal_stresses(stress)
+        assert pytest.approx(principal[0][0], abs=1e-6) == 100.0
+        assert pytest.approx(principal[0][1], abs=1e-6) == 0.0
+        assert pytest.approx(principal[0][2], abs=1e-6) == 0.0
+
+    def test_uniaxial_compression(self):
+        """单轴压缩：σ1=σ2=0, σ3=-100"""
+        stress = np.array([[0, 0, -100.0, 0, 0, 0]])
+        principal, _ = get_principal_stresses(stress)
+        assert pytest.approx(principal[0][0], abs=1e-6) == 0.0
+        assert pytest.approx(principal[0][1], abs=1e-6) == 0.0
+        assert pytest.approx(principal[0][2], abs=1e-6) == -100.0
+
+    def test_pure_shear(self):
+        """纯剪切：σ1=τ, σ2=0, σ3=-τ"""
+        tau = 50.0
+        stress = np.array([[0, 0, 0, tau, 0, 0]])
+        principal, _ = get_principal_stresses(stress)
+        assert pytest.approx(principal[0][0], abs=1e-6) == tau
+        assert pytest.approx(principal[0][1], abs=1e-6) == 0.0
+        assert pytest.approx(principal[0][2], abs=1e-6) == -tau
+
+    def test_hydrostatic_pressure(self):
+        """静水压：σ1=σ2=σ3=-p"""
+        p = 100.0
+        stress = np.array([[-p, -p, -p, 0, 0, 0]])
+        principal, _ = get_principal_stresses(stress)
+        assert all(abs(principal[0][i] - (-p)) < 1e-10 for i in range(3))
+
+    def test_principal_directions(self):
+        """验证主方向是正交的"""
+        stress = np.array([[100.0, 50.0, 0, 10.0, 0, 0]])
+        _, directions = get_principal_stresses(stress)
+        d = directions[0]  # (3, 3)
+        # 验证每列是单位向量
+        for col in range(3):
+            norm = np.linalg.norm(d[:, col])
+            assert pytest.approx(norm, abs=1e-6) == 1.0
+        # 验证列之间正交
+        dot01 = np.dot(d[:, 0], d[:, 1])
+        dot02 = np.dot(d[:, 0], d[:, 2])
+        dot12 = np.dot(d[:, 1], d[:, 2])
+        assert pytest.approx(dot01, abs=1e-6) == 0.0
+        assert pytest.approx(dot02, abs=1e-6) == 0.0
+        assert pytest.approx(dot12, abs=1e-6) == 0.0
+
+    def test_batch(self):
+        """批量计算：结果形状正确"""
+        stress = np.random.rand(20, 6)
+        principal, directions = get_principal_stresses(stress)
+        assert principal.shape == (20, 3)
+        assert directions.shape == (20, 3, 3)
+
+
+class TestPrincipalShearStresses:
+    """主剪切应力计算测试"""
+
+    def test_pure_shear(self):
+        """纯剪切 S12=τ → τ12=τ, τ13=τ/2, τ23=τ/2"""
+        tau = 100.0
+        stress = np.array([[0, 0, 0, tau, 0, 0]])
+        shear = get_principal_shear_stresses(stress)
+        assert pytest.approx(shear[0][0], abs=1e-6) == tau  # |σ1-σ2|/2 = |τ|/2
+        # 对于纯剪切，主应力是 [τ, 0, -τ]
+        # τ12 = |τ - 0|/2 = τ/2
+        # τ13 = |τ - (-τ)|/2 = τ
+        # τ23 = |0 - (-τ)|/2 = τ/2
+
+    def test_uniaxial_tension(self):
+        """单轴拉伸：σ1=σ, σ2=σ3=0"""
+        sigma = 100.0
+        stress = np.array([[sigma, 0, 0, 0, 0, 0]])
+        shear = get_principal_shear_stresses(stress)
+        assert pytest.approx(shear[0][0], abs=1e-6) == sigma / 2  # |σ1-σ2|/2
+        assert pytest.approx(shear[0][1], abs=1e-6) == sigma / 2  # |σ1-σ3|/2
+        assert pytest.approx(shear[0][2], abs=1e-6) == 0.0  # |σ2-σ3|/2
+
+    def test_batch(self):
+        """批量计算"""
+        stress = np.random.rand(30, 6)
+        shear = get_principal_shear_stresses(stress)
+        assert shear.shape == (30, 3)
+        assert np.all(shear >= 0)
+
+
+class TestMaxShearStress:
+    """最大剪切应力测试"""
+
+    def test_pure_shear(self):
+        """纯剪切：最大剪切应力等于最大主应力"""
+        tau = 50.0
+        stress = np.array([[0, 0, 0, tau, 0, 0]])
+        max_shear = get_max_shear_stress(stress)
+        assert pytest.approx(max_shear[0], abs=1e-6) == tau
+
+    def test_uniaxial_tension(self):
+        """单轴拉伸：最大剪切应力 = σ1/2"""
+        sigma = 200.0
+        stress = np.array([[sigma, 0, 0, 0, 0, 0]])
+        max_shear = get_max_shear_stress(stress)
+        assert pytest.approx(max_shear[0], abs=1e-6) == sigma / 2
+
+    def test_batch(self):
+        """批量计算"""
+        stress = np.random.rand(25, 6)
+        max_shear = get_max_shear_stress(stress)
+        assert max_shear.shape == (25,)
+        assert np.all(max_shear >= 0)
+
+
+class TestWorstPrincipalStress:
+    """最不利主应力测试"""
+
+    def test_tension_worst_is_positive(self):
+        """受拉时最不利是最大主应力（正值）"""
+        stress = np.array([[100.0, 0, 0, 0, 0, 0]])
+        worst = get_worst_principal_stress(stress)
+        assert pytest.approx(worst[0], abs=1e-6) == 100.0
+
+    def test_compression_worst_is_negative(self):
+        """受压时最不利是最小主应力（负值）"""
+        stress = np.array([[0, 0, -100.0, 0, 0, 0]])
+        worst = get_worst_principal_stress(stress)
+        assert pytest.approx(worst[0], abs=1e-6) == -100.0
+
+    def test_mixed(self):
+        """拉压混合时比较绝对值"""
+        # σ1=100 (tension), σ3=-50 (compression) → 最不利是 100
+        stress = np.array([[50.0, 0, -30.0, 0, 0, 0]])
+        worst = get_worst_principal_stress(stress)
+        assert pytest.approx(worst[0], abs=1e-6) == 50.0
+
+
+class TestStressInvariants:
+    """应力不变量测试"""
+
+    def test_hydrostatic_pressure(self):
+        """静水压 I1 = -3p, I2 = 3p², I3 = -p³"""
+        p = 50.0
+        stress = np.array([[-p, -p, -p, 0, 0, 0]])
+        inv = get_stress_invariants(stress)
+        assert pytest.approx(inv["I1"][0], abs=1e-6) == -3 * p
+        assert pytest.approx(inv["I2"][0], abs=1e-6) == 3 * p ** 2
+        assert pytest.approx(inv["I3"][0], abs=1e-6) == -p ** 3
+
+    def test_uniaxial_tension(self):
+        """单轴拉伸：σ1=σ, I1=σ, I2=-σ², I3=0"""
+        sigma = 100.0
+        stress = np.array([[sigma, 0, 0, 0, 0, 0]])
+        inv = get_stress_invariants(stress)
+        assert pytest.approx(inv["I1"][0], abs=1e-6) == sigma
+        assert pytest.approx(inv["I2"][0], abs=1e-6) == 0.0  # S11*S22 + ... - shear terms
+        assert pytest.approx(inv["I3"][0], abs=1e-6) == 0.0
+
+    def test_pure_shear(self):
+        """纯剪切：I1=0"""
+        tau = 50.0
+        stress = np.array([[0, 0, 0, tau, 0, 0]])
+        inv = get_stress_invariants(stress)
+        assert pytest.approx(inv["I1"][0], abs=1e-6) == 0.0
+        # I2 = -τ^2 (from -S12^2 term)
+        assert pytest.approx(inv["I2"][0], abs=1e-6) == -tau ** 2
+
+    def test_batch(self):
+        """批量计算"""
+        stress = np.random.rand(15, 6)
+        inv = get_stress_invariants(stress)
+        assert inv["I1"].shape == (15,)
+        assert inv["I2"].shape == (15,)
+        assert inv["I3"].shape == (15,)
+
+
+class TestVonMisesFromUtils:
+    """von_mises 函数测试（直接从 _utils 导入）"""
+
+    def test_uniaxial_tension(self):
+        """单轴拉伸：S11=100 → σ_vm = 100"""
+        stress = np.array([[100.0, 0, 0, 0, 0, 0]])
+        vm = von_mises(stress)
+        assert pytest.approx(vm[0], abs=1e-6) == 100.0
+
+    def test_hydrostatic_zero(self):
+        """静水压：σ_vm = 0"""
+        p = 50.0
+        stress = np.array([[p, p, p, 0.0, 0.0, 0.0]])
+        vm = von_mises(stress)
+        assert pytest.approx(vm[0], abs=1e-6) == 0.0
+
+    def test_pure_shear(self):
+        """纯剪切：σ_vm = √3 · τ"""
+        tau = 100.0
+        stress = np.array([[0.0, 0.0, 0.0, tau, 0.0, 0.0]])
+        vm = von_mises(stress)
+        assert pytest.approx(vm[0], rel=1e-6) == tau * np.sqrt(3)
+
+    def test_batch(self):
+        """批量输入"""
+        stress = np.random.rand(50, 6)
+        vm = von_mises(stress)
+        assert vm.shape == (50,)
+        assert np.all(vm >= 0)
