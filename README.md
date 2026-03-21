@@ -56,7 +56,7 @@ cae solve beam.inp && cae view results/
   achtel2.sta   173 B
 ```
 
-浏览器自动打开 ParaView Glance 显示位移/应力云图
+浏览器自动打开 ParaView Glance 显示位移 / 应力云图
 
 ---
 
