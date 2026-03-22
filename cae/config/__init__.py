@@ -93,6 +93,15 @@ class Settings:
     def active_model(self, value: str) -> None:
         self.set("active_model", value)
 
+    @property
+    def solver_path(self) -> str | None:
+        """CalculiX 求解器路径"""
+        return self._data.get("solver_path")
+
+    @solver_path.setter
+    def solver_path(self, value: str) -> None:
+        self.set("solver_path", value)
+
     def __repr__(self) -> str:  # pragma: no cover
         return (
             f"Settings(config_dir={self.config_dir}, "

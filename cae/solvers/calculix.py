@@ -62,6 +62,17 @@ class CalculixSolver(BaseSolver):
 
     @functools.lru_cache(maxsize=1)
     def _find_binary(self) -> Optional[Path]:
+        # 0. 用户配置的求解器路径
+        if settings.solver_path:
+            user_path = Path(settings.solver_path)
+            if user_path.is_file():
+                return user_path.resolve()
+            # 如果是目录，查找 ccx.exe
+            for ccx_name in ["ccx.exe", "ccx"]:
+                ccx_path = user_path / ccx_name
+                if ccx_path.is_file():
+                    return ccx_path.resolve()
+
         # 1. cae install 安装的捆绑二进制（~/.cae-cli/solvers/calculix/bin/）
         for candidate in [
             settings.solvers_dir / "calculix" / "bin" / "ccx",

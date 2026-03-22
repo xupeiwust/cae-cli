@@ -875,20 +875,65 @@ def solve(
         err_console.print(f"\n  {exc}\n")
         raise typer.Exit(1)
 
+    # ---- 检查/设置求解器路径 ----
+    binary = solver_instance._find_binary() if hasattr(solver_instance, '_find_binary') else None
+
+    if binary is None:
+        # 询问用户求解器路径
+        console.print("  [yellow]未找到求解器，请指定 CalculiX 路径[/yellow]")
+        console.print()
+
+        # 尝试查找可能的路径
+        possible_paths = [
+            str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin" / "ccx.exe"),
+            str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin"),
+            "C:\\CalculiX\\bin\\ccx.exe",
+        ]
+
+        default_path = possible_paths[0]
+        for p in possible_paths:
+            if Path(p).exists() or Path(p).parent.exists():
+                default_path = p
+                break
+
+        raw_path = typer.prompt(
+            "  求解器路径 (ccx.exe)",
+            default=default_path,
+            show_default=True,
+        )
+        solver_path = Path(raw_path.strip())
+
+        # 如果用户输入的是目录，取其中的 ccx.exe
+        if solver_path.is_dir():
+            for ccx_name in ["ccx.exe", "ccx"]:
+                ccx_in_dir = solver_path / ccx_name
+                if ccx_in_dir.is_file():
+                    solver_path = ccx_in_dir
+                    break
+
+        # 保存路径到配置
+        settings.solver_path = str(solver_path.resolve())
+
+        # 清除求解器缓存
+        if hasattr(solver_instance, '_find_binary'):
+            # 清除 _find_binary 的缓存
+            solver_instance._find_binary.cache_clear()
+
+        # 重新查找
+        binary = solver_instance._find_binary()
+
     # ---- 检查安装状态 ----
-    if not solver_instance.check_installation():
+    if binary is None or not solver_instance.check_installation():
         console.print(
-            f"  [bold red]未找到求解器 '{solver}'[/bold red]\n"
-            "  请先运行 [bold]`cae install`[/bold] 安装 CalculiX。\n"
+            f"  [bold red]未找到有效的求解器[/bold red]\n"
+            "  请检查路径是否正确。\n"
         )
         raise typer.Exit(1)
 
     version = solver_instance.get_version()
-    binary = solver_instance._find_binary() if hasattr(solver_instance, '_find_binary') else None
     console.print(f"  使用求解器: [green]{solver}[/green]"
                   + (f"  [dim]({version})[/dim]" if version else ""))
-    if binary:
-        console.print(f"  求解器路径: [dim]{binary}[/dim]")
+    console.print(f"  求解器路径: [cyan]{binary}[/cyan]")
     console.print(f"  输入文件:   [cyan]{inp_file}[/cyan]")
     console.print(f"  输出目录:   [cyan]{output}[/cyan]")
     console.print()
@@ -903,7 +948,6 @@ def solve(
         transient=False,
     ) as progress:
         task = progress.add_task("  [bold yellow]求解中...[/bold yellow]", total=None)
-        console.print(f"  [dim]> 运行 ccx...[/dim]")
         result = solver_instance.solve(
             inp_file.resolve(),
             output.resolve(),
