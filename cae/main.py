@@ -884,8 +884,11 @@ def solve(
         raise typer.Exit(1)
 
     version = solver_instance.get_version()
+    binary = solver_instance._find_binary() if hasattr(solver_instance, '_find_binary') else None
     console.print(f"  使用求解器: [green]{solver}[/green]"
                   + (f"  [dim]({version})[/dim]" if version else ""))
+    if binary:
+        console.print(f"  求解器路径: [dim]{binary}[/dim]")
     console.print(f"  输入文件:   [cyan]{inp_file}[/cyan]")
     console.print(f"  输出目录:   [cyan]{output}[/cyan]")
     console.print()
@@ -900,6 +903,7 @@ def solve(
         transient=False,
     ) as progress:
         task = progress.add_task("  [bold yellow]求解中...[/bold yellow]", total=None)
+        console.print(f"  [dim]> 运行 ccx...[/dim]")
         result = solver_instance.solve(
             inp_file.resolve(),
             output.resolve(),
@@ -1749,7 +1753,10 @@ def install(
                 result = installer.install(progress_callback=_solver_progress)
 
             if result.success:
-                console.print(f"  CalculiX 安装成功  方式: {result.method}\n")
+                install_path = result.install_dir or installer.get_install_dir()
+                console.print(f"  CalculiX 安装成功")
+                console.print(f"  方式: {result.method}")
+                console.print(f"  路径: {install_path}\n")
             else:
                 console.print(f"  CalculiX 安装失败\n  {result.error_message}\n")
 
@@ -1763,8 +1770,12 @@ def install(
             mi.activate(model_name)
         else:
             from cae.installer.model_installer import KNOWN_MODELS
-            meta = KNOWN_MODELS.get(model_name, {})
-            size = meta.get("size_gb", "?")
+            meta = KNOWN_MODELS.get(model_name)
+            if meta is None:
+                console.print(f"  [red]错误:[/red] 未知模型 '{model_name}'")
+                console.print(f"  可用模型: {', '.join(KNOWN_MODELS.keys())}\n")
+                return
+            size = meta.size_gb
             console.print(f"  模型: [cyan]{model_name}[/cyan]  大小: ~{size} GB")
             console.print("  这可能需要几分钟，取决于网络速度...\n")
 

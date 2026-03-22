@@ -21,7 +21,7 @@ from urllib.error import URLError
 # GitHub Release 地址
 REPO_OWNER = "yd5768365-hue"
 REPO_NAME = "cae-cli"
-RELEASE_VERSION = "v1.0.0"
+RELEASE_VERSION = "ccx"
 
 
 @dataclass
@@ -48,11 +48,11 @@ def get_platform() -> str:
 def get_archive_name(platform_name: str) -> str:
     """获取对应平台的压缩包名称"""
     names = {
-        "windows": "ccx_windows.zip",
+        "windows": "calculix_2.23_4win.zip",
         "linux": "ccx_linux.tar.gz",
         "macos": "ccx_macos.tar.gz",
     }
-    return names.get(platform_name, "ccx_windows.zip")
+    return names.get(platform_name, "calculix_2.23_4win.zip")
 
 
 class SolverInstaller:
@@ -67,9 +67,16 @@ class SolverInstaller:
         self.solvers_dir = self.cae_home / "solvers" / "calculix"
         self.bin_dir = self.solvers_dir / "bin"
 
+        # 项目内置求解器目录（用于分发）
+        self._builtin_dirs = [
+            Path(__file__).parent.parent.parent / "cxx.exe",  # cae-cli/cxx.exe/
+            Path(__file__).parent.parent.parent / "release" / "ccx",  # cae-cli/release/ccx/
+            Path(__file__).parent.parent.parent / "CalculiX-Portable" / "bin",  # CalculiX-Portable/bin/
+        ]
+
     def is_installed(self) -> bool:
         """检查是否已安装"""
-        # 检查常见的可执行文件
+        # 优先检查 ccx.exe（static 版本）
         if self.platform == "windows":
             return (self.bin_dir / "ccx.exe").is_file()
         else:
@@ -157,6 +164,14 @@ class SolverInstaller:
                 )
 
         except Exception as e:
+            # 下载/解压失败时，尝试使用内置求解器
+            if progress_callback:
+                progress_callback(0.1, "下载失败，尝试使用内置求解器...")
+
+            builtin_result = self.install_from_builtin(progress_callback)
+            if builtin_result.success:
+                builtin_result.method = "fallback_to_builtin"
+                return builtin_result
             return InstallResult(
                 success=False,
                 error_message=str(e),
@@ -207,11 +222,18 @@ class SolverInstaller:
         if not extracted_files:
             raise RuntimeError("解压后未找到 ccx 可执行文件")
 
-        # 移动到 bin 目录（如果需要）
-        for f in extracted_files:
-            dest = self.bin_dir / f.name
-            if f != dest:
-                shutil.move(str(f), str(dest))
+        # 优先使用 static 版本（无需额外 DLL）
+        static_files = list(self.solvers_dir.rglob("ccx_static.exe"))
+        if static_files:
+            static_exe = static_files[0]
+            dest = self.bin_dir / "ccx.exe"
+            shutil.copy2(static_exe, dest)
+        else:
+            # 移动到 bin 目录（如果需要）
+            for f in extracted_files:
+                dest = self.bin_dir / f.name
+                if f != dest:
+                    shutil.move(str(f), str(dest))
 
         # 清理可能产生的空目录
         self._cleanup_empty_dirs(self.solvers_dir)
@@ -243,3 +265,61 @@ class SolverInstaller:
             return True
         except Exception:
             return False
+
+    def _find_builtin_solver(self) -> Optional[Path]:
+        """查找项目内置的求解器"""
+        for directory in self._builtin_dirs:
+            if not directory.exists():
+                continue
+            if self.platform == "windows":
+                ccx_path = directory / "ccx.exe"
+                if ccx_path.is_file():
+                    return ccx_path
+            else:
+                ccx_path = directory / "ccx"
+                if ccx_path.is_file():
+                    return ccx_path
+        return None
+
+    def install_from_builtin(self, progress_callback: Optional[callable] = None) -> InstallResult:
+        """从项目内置求解器安装（用于分发场景）"""
+        if self.is_installed():
+            return InstallResult(success=True, method="already_installed")
+
+        builtin_path = self._find_builtin_solver()
+        if not builtin_path:
+            return InstallResult(
+                success=False,
+                error_message="未找到内置求解器，请先运行 'cae install' 安装"
+            )
+
+        try:
+            self.bin_dir.mkdir(parents=True, exist_ok=True)
+
+            if progress_callback:
+                progress_callback(0.3, "正在复制求解器...")
+
+            dest = self.bin_dir / builtin_path.name
+            shutil.copy2(builtin_path, dest)
+
+            # 如果有 DLL 目录，也复制
+            dll_dir = builtin_path.parent / "dlls"
+            if dll_dir.exists():
+                dll_dest = self.bin_dir / "dlls"
+                dll_dest.mkdir(parents=True, exist_ok=True)
+                for dll in dll_dir.glob("*.dll"):
+                    shutil.copy2(dll, dll_dest / dll.name)
+
+            if progress_callback:
+                progress_callback(0.9, "正在验证...")
+
+            if self.is_installed():
+                return InstallResult(
+                    success=True,
+                    method="builtin_copy",
+                    install_dir=self.bin_dir,
+                )
+            return InstallResult(success=False, error_message="复制后验证失败")
+
+        except Exception as e:
+            return InstallResult(success=False, error_message=str(e))

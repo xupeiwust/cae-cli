@@ -274,54 +274,88 @@ class ModelInstaller:
         dest: Path,
         progress_callback: Optional[callable] = None,
     ) -> DownloadResult:
-        """下载文件（优先使用 wget/curl）"""
+        """下载文件（使用 curl，支持进度回调）"""
+        import threading
+        import re
+
+        def _parse_progress(line: str, callback: callable, size_mb: float) -> None:
+            """解析进度行并回调"""
+            # curl --progress-bar 输出: "  100.0%"
+            # 或普通进度: "  % Total    100   5.0M    0:00:12   --:--:--"
+            if "%" in line:
+                match = re.search(r'(\d+(?:\.\d+)?)\s*%', line)
+                if match:
+                    pct = float(match.group(1)) / 100.0
+                    downloaded = pct * size_mb
+                    callback(min(pct, 0.99), f"下载中... {downloaded:.1f} / {size_mb:.1f} MB")
+
+        def _run_with_progress(cmd: list[str], cb: callable) -> tuple[int, str, float]:
+            """运行命令并实时更新进度，返回 (returncode, stderr, size_mb)"""
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+            )
+            stderr_lines = []
+            total_size_mb = 0.0
+
+            def _read_stderr():
+                nonlocal total_size_mb
+                for line in process.stderr:
+                    stderr_lines.append(line)
+                    # 尝试从 "  % Total" 行提取总大小
+                    if "Total" in line and total_size_mb == 0.0:
+                        # 格式: "  % Total    100   5.0M    0:00:12   --:--:--"
+                        size_match = re.search(r'(\d+\.?\d*)\s*[KMG]?B?\s*$', line)
+                        if size_match:
+                            size_str = size_match.group(1)
+                            if "G" in line.upper():
+                                total_size_mb = float(size_str) * 1024
+                            elif "M" in line.upper():
+                                total_size_mb = float(size_str)
+                            elif "K" in line.upper():
+                                total_size_mb = float(size_str) / 1024
+                            else:
+                                total_size_mb = float(size_str) / (1024 * 1024)
+                    if cb:
+                        _parse_progress(line, cb, total_size_mb if total_size_mb > 0 else 5000.0)
+
+            thread = threading.Thread(target=_read_stderr, daemon=True)
+            thread.start()
+            process.wait()
+            thread.join(timeout=1)
+            return process.returncode, "".join(stderr_lines), total_size_mb
+
         try:
             if progress_callback:
-                progress_callback(0.05, "正在连接...")
+                progress_callback(0.0, "正在连接...")
 
-            # 优先使用 wget（更适合大文件）
-            downloader = None
-            error_msg = ""
-
-            # 尝试 wget
-            try:
-                result = subprocess.run(
-                    ["wget", "-c", "-O", str(dest), url],
-                    capture_output=True, text=True, timeout=0,  # 无超时
-                )
-                if result.returncode == 0:
-                    downloader = "wget"
-            except FileNotFoundError:
-                pass
-
-            # 尝试 curl
-            if downloader is None:
-                try:
-                    result = subprocess.run(
-                        ["curl", "-L", "-C", "-", "-o", str(dest), url],
-                        capture_output=True, text=True, timeout=0,
-                    )
-                    if result.returncode == 0:
-                        downloader = "curl"
-                except FileNotFoundError:
-                    pass
-
-            if downloader is None:
-                return DownloadResult(success=False, error_message="未找到 wget 或 curl，请安装")
+            cmd = ["curl", "-L", "-C", "-", "-o", str(dest), "--progress-bar", url]
 
             if progress_callback:
-                progress_callback(0.1, f"下载中（使用 {downloader}）...")
+                progress_callback(0.05, "下载中...")
 
-            # 验证文件
-            if dest.exists() and dest.stat().st_size > 1024 * 1024:  # > 1MB
-                return DownloadResult(
-                    success=True,
-                    file_path=dest,
-                    file_size_mb=dest.stat().st_size / (1024 * 1024),
-                )
-            else:
+            returncode, stderr, size_mb = _run_with_progress(cmd, progress_callback)
+
+            if returncode == 0:
+                if dest.exists() and dest.stat().st_size > 1024 * 1024:
+                    if progress_callback:
+                        progress_callback(1.0, "下载完成")
+                    return DownloadResult(
+                        success=True,
+                        file_path=dest,
+                        file_size_mb=dest.stat().st_size / (1024 * 1024),
+                    )
                 return DownloadResult(success=False, error_message="下载失败或文件无效")
+            else:
+                error = stderr.strip() if stderr else "curl 下载失败"
+                if "404" in error:
+                    return DownloadResult(success=False, error_message="文件不存在")
+                return DownloadResult(success=False, error_message=error)
 
+        except FileNotFoundError:
+            return DownloadResult(success=False, error_message="未找到 curl，请安装")
         except subprocess.TimeoutExpired:
             if dest.exists():
                 dest.unlink()
