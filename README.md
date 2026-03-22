@@ -5,7 +5,7 @@
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.2.0-blue.svg)](https://pypi.org/project/cae-cxx/)
+[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.3.0-blue.svg)](https://pypi.org/project/cae-cxx/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Test](https://img.shields.io/badge/Tests-112%20passed-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
@@ -18,15 +18,46 @@
 
 ## 目录
 
+- [新增功能](#新增功能)
 - [快速开始](#快速开始)
 - [核心能力](#核心能力)
 - [安装](#安装)
 - [命令速查](#命令速查)
 - [内置模板](#内置模板)
+- [Python API](#python-api)
 - [AI 模型](#ai-模型)
 - [FAQ](#faq)
 - [项目结构](#项目结构)
 - [开发](#开发)
+
+---
+
+## 新增功能
+
+### v1.3.0 (2026-03)
+
+**协议接口**：所有关键词类实现 `IKeyword` 协议，支持类型检查和 IDE 自动补全
+
+**材料模型**：
+- `HyperElastic` — 超弹性材料（Mooney-Rivlin / Ogden / Yeoh / Arruda-Boyce）
+- `Plastic` — 塑性材料（等向/运动/组合硬化 + 循环硬化）
+
+**接触分析**：
+- `SurfaceInteraction` / `SurfaceBehavior` / `Friction` — 完整接触定义
+- `ContactPair` — 接触对（NODE_TO_SURFACE / SURFACE_TO_SURFACE）
+- `Tie` — 绑定接触
+- `Gap` / `GapUnit` — 间隙单元
+
+**约束**：
+- `Coupling` — KINEMATIC / DISTRIBUTING 耦合
+- `Mpc` — MPC 多点约束（BEAM / PLANE / STRAIGHT / MEANROT / DIST）
+- `Equation` — 线性方程约束 + `EquationFactory` 工厂方法
+
+**载荷**：
+- `Amplitude` — 载荷-时间幅值曲线
+- `Cload` / `Dload` / `Boundary` — 载荷和边界条件
+
+---
 
 ---
 
@@ -219,7 +250,42 @@ cae inp template flat_plate -o plate.inp --Lx=200 --Ly=100 --pressure=5.0
 
 ---
 
-## AI 模型
+## Python API
+
+除了命令行，cae-cli 还提供完整的 Python API：
+
+```python
+from cae.inp import ModelBuilder, StaticStep
+from cae.material import Elastic, Plastic
+from cae.contact import ContactPair, SurfaceInteraction, SurfaceBehavior
+from cae.enums import ContactType, PressureOverclosure, HardeningRule
+
+# 构建模型
+model = ModelBuilder()
+model.add_node(1, (0, 0, 0))
+model.add_node(2, (100, 0, 0))
+model.add_element("C3D8", [1, 2, 3, 4, 5, 6, 7, 8])
+
+# 添加材料（塑性）
+elastic = Elastic(params=(210000, 0.3))
+plastic = Plastic(stress=[200, 250], strain=[0, 0.1], hardening=HardeningRule.ISOTROPIC)
+model.add_material("STEEL", elastic, plastic)
+
+# 添加接触
+si = SurfaceInteraction(name="STEEL_CONTACT")
+sb = SurfaceBehavior(pressure_overclosure=PressureOverclosure.EXPONENTIAL, c0=0.05, p0=5e7)
+cp = ContactPair(interaction=si, type=ContactType.SURFACE_TO_SURFACE, dep_surf=..., ind_surf=...)
+
+# 添加载荷步
+step = StaticStep(time_period=1.0, nlgeom=True)
+step.add_boundary(nodes={1}, dofs={1: 0, 2: 0, 3: 0})
+step.add_load(nodes={2}, dofs={3: -1000})
+
+# 输出 INP
+print(model.to_inp())
+```
+
+---
 
 | 模型 | 大小 | 量化 | 最低显存 | 来源 |
 |------|------|------|----------|------|
@@ -334,7 +400,7 @@ cae-cli/
 │   └── installer/           # 安装器
 │       ├── solver_installer.py
 │       └── model_installer.py
-├── tests/                  # 测试用例 (100 passed, 12 skipped)
+├── tests/                  # 测试用例 (112 passed)
 └── examples/              # 示例文件
 ```
 
