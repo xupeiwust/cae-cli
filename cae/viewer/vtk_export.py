@@ -180,12 +180,17 @@ def _fallback_frd_parser(frd_file: Path, vtu_path: Path) -> VtkExportResult:
 
         # 将结果映射到全节点数组
         n_nodes = len(frd.nodes.ids)
-        n_comps = len(res.values[0]) if res.values else 0
+        # res.values 是 dict[int, np.ndarray]，取第一个值的长度作为分量数
+        first_vals = next(iter(res.values.values()), None)
+        n_comps = len(first_vals) if first_vals is not None else 0
         if n_comps == 0:
             continue
 
         arr = np.zeros((n_nodes, n_comps), dtype=np.float64)
-        for nid, vals in zip(res.node_ids, res.values):
+        for nid in res.node_ids:
+            vals = res.values.get(nid)
+            if vals is None:
+                continue
             idx = node_id_to_idx.get(nid)
             if idx is not None and len(vals) == n_comps:
                 arr[idx] = vals

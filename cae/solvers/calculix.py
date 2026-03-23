@@ -4,10 +4,11 @@ CalculiX 求解器实现
 支持 Abaqus 兼容的 .inp 格式，输出 .frd（结果）和 .dat（数据）文件。
 
 二进制查找优先级：
-  1. ~/.local/share/cae-cli/solvers/calculix/ccx  （cae install 安装的）
-  2. 系统 PATH 中的 ccx / ccx_2.21 等
-  3. MSYS2/MinGW 常见路径中的 ccx
-  4. WSL 中的 ccx（如果可用）
+  1. 用户配置的求解器路径
+  2. ~/.local/share/cae-cli/solvers/calculix/ccx  （cae install 安装的）
+  3. 项目内置的 ccx.exe（独立运行版本，带 DLL）
+  4. 系统 PATH 中的 ccx
+  5. WSL 中的 ccx（如果可用）
 """
 from __future__ import annotations
 
@@ -30,17 +31,24 @@ _WARN_MARKERS = ("*WARNING", "Warning", "warning:")
 # 系统 PATH 中常见的 CalculiX 可执行文件名
 _CCX_NAMES = ["ccx", "ccx_2.21", "ccx_2.20", "ccx_2.19", "ccx_2.18", "CalculiX"]
 
-# MSYS2/MinGW 常见安装路径
-_MSYS2_PATHS = [
-    Path("D:/Apps/tools/msys/ucrt64/bin/ccx.exe"),
-    Path("D:/Apps/tools/msys/mingw64/bin/ccx.exe"),
-    Path("C:/msys64/ucrt64/bin/ccx.exe"),
-    Path("C:/msys64/mingw64/bin/ccx.exe"),
-    Path("C:/msys2/ucrt64/bin/ccx.exe"),
-    Path("C:/msys2/mingw64/bin/ccx.exe"),
-    # 项目目录下的 ccx
-    Path("D:/CAE-CLI/cae-cli/cxx.exe/ccx.exe"),
-]
+
+def _get_project_ccx_path() -> Optional[Path]:
+    """获取项目内置的 ccx.exe 路径（相对于当前文件位置）"""
+    # 项目目录结构: cae/solvers/calculix.py -> 项目根目录 / cxx.exe
+    project_root = Path(__file__).parent.parent.parent
+    ccx_path = project_root / "cxx.exe" / "ccx.exe"
+    if ccx_path.is_file():
+        return ccx_path.resolve()
+    return None
+
+
+def _get_project_dll_dir() -> Optional[Path]:
+    """获取项目内置的 DLL 目录路径"""
+    project_root = Path(__file__).parent.parent.parent
+    dll_dir = project_root / "cxx.exe" / "dlls"
+    if dll_dir.is_dir():
+        return dll_dir.resolve()
+    return None
 
 
 class CalculixSolver(BaseSolver):
@@ -84,22 +92,17 @@ class CalculixSolver(BaseSolver):
                 return candidate
 
         # 1.5. 项目本地的 ccx.exe（独立运行版本，带 DLL）
-        local_ccx = Path("D:/CAE-CLI/cae-cli/cxx.exe/ccx.exe")
-        if local_ccx.is_file():
-            return local_ccx.resolve()
+        local_ccx = _get_project_ccx_path()
+        if local_ccx:
+            return local_ccx
 
-        # 2. 项目目录下的 ccx
-        for candidate in _MSYS2_PATHS:
-            if candidate.exists():
-                return candidate.resolve()
-
-        # 3. 系统 PATH
+        # 2. 系统 PATH
         for name in _CCX_NAMES:
             found = shutil.which(name)
             if found:
                 return Path(found)
 
-        # 4. WSL 中的 ccx
+        # 3. WSL 中的 ccx
         wsl_ccx = self._find_wsl_ccx()
         if wsl_ccx:
             return wsl_ccx
@@ -159,8 +162,8 @@ class CalculixSolver(BaseSolver):
     def supported_formats(self) -> list[str]:
         return [".inp"]
 
-    def _add_msys2_path(self) -> None:
-        """添加 MSYS2 bin 目录到 PATH（ccx.exe 需要这些 DLL）"""
+    def _add_dll_path(self) -> None:
+        """添加 DLL 目录到 PATH（ccx.exe 需要这些 DLL）"""
         import os
 
         # 1. 检查 cae install 安装的目录 (~/.cae-cli/solvers/calculix/bin/)
@@ -171,36 +174,19 @@ class CalculixSolver(BaseSolver):
                 os.environ["PATH"] = str(install_bin_dir) + os.pathsep + current_path
             return
 
-        # 2. 检查项目自带的 ccx.exe 目录
-        local_ccx_dir = Path("D:/CAE-CLI/cae-cli/cxx.exe")
-        local_dll_dir = local_ccx_dir / "dlls"
-
-        if local_dll_dir.exists():
+        # 2. 检查项目自带的 ccx.exe DLL 目录
+        local_dll_dir = _get_project_dll_dir()
+        if local_dll_dir and local_dll_dir.exists():
             # 使用本地 DLL 目录
             current_path = os.environ.get("PATH", "")
             if str(local_dll_dir) not in current_path:
                 os.environ["PATH"] = str(local_dll_dir) + os.pathsep + current_path
             return
 
-        # 3. 回退到系统 MSYS2
-        msys2_bin = Path("D:/Apps/tools/msys/ucrt64/bin")
-        if msys2_bin.exists():
-            current_path = os.environ.get("PATH", "")
-            if str(msys2_bin) not in current_path:
-                os.environ["PATH"] = str(msys2_bin) + os.pathsep + current_path
-        else:
-            # 尝试其他常见路径
-            for alt_path in ["C:/msys64/ucrt64/bin", "C:/msys2/ucrt64/bin"]:
-                if Path(alt_path).exists():
-                    current_path = os.environ.get("PATH", "")
-                    if alt_path not in current_path:
-                        os.environ["PATH"] = alt_path + os.pathsep + current_path
-                    break
-
     def _get_env(self) -> dict:
-        """获取环境变量（包含 MSYS2 路径）"""
+        """获取环境变量（包含 DLL 路径）"""
         import os
-        self._add_msys2_path()
+        self._add_dll_path()
         return os.environ.copy()
 
     def _ensure_frd_output(self, inp_file: Path) -> None:
@@ -267,8 +253,8 @@ class CalculixSolver(BaseSolver):
         - 以 output_dir 为 CWD 运行（输出文件落地在此）
         - 需要把 .inp 文件复制/硬链接到 output_dir
         """
-        # 添加 MSYS2 路径
-        self._add_msys2_path()
+        # 添加 DLL 路径
+        self._add_dll_path()
 
         # --- 前置检查 ---
         binary = self._find_binary()
@@ -302,7 +288,7 @@ class CalculixSolver(BaseSolver):
         is_wsl = self._is_wsl(binary)
 
         try:
-            # 获取包含 MSYS2 路径的环境变量
+            # 获取环境变量
             env = self._get_env()
 
             if is_wsl:
@@ -324,12 +310,12 @@ class CalculixSolver(BaseSolver):
                 install_bin_dir = (settings.solvers_dir / "calculix" / "bin").resolve()
 
                 # 2. 项目本地的 ccx.exe 目录
-                local_ccx_dir = Path("D:/CAE-CLI/cae-cli/cxx.exe").resolve()
-                local_dll_dir = local_ccx_dir / "dlls"
+                local_ccx_path = _get_project_ccx_path()
+                local_dll_dir = _get_project_dll_dir()
 
                 # 判断使用哪种运行模式
                 use_install_dir = install_bin_dir.exists() and binary.resolve().parent == install_bin_dir
-                use_local_dll = local_dll_dir.exists() and binary.resolve() == local_ccx_dir / "ccx.exe"
+                use_local_dll = local_dll_dir and local_ccx_path and binary.resolve() == local_ccx_path
 
                 if use_install_dir:
                     # 从安装目录运行 - DLL 就在 bin 目录中
@@ -342,7 +328,7 @@ class CalculixSolver(BaseSolver):
                         timeout=timeout,
                         env=env,
                     )
-                elif use_local_dll:
+                elif use_local_dll and local_ccx_path:
                     # 使用本地 DLL 目录作为工作目录
                     # 需要把输入文件复制到 dlls 目录
                     inp_in_dlls = local_dll_dir / inp_file.name
@@ -356,7 +342,7 @@ class CalculixSolver(BaseSolver):
                         env_copy["PATH"] = dll_dir_str + os.pathsep + env_copy.get("PATH", "")
 
                     # 使用绝对路径运行 ccx
-                    cmd = [str(local_ccx_dir / "ccx.exe"), "-i", job_name]
+                    cmd = [str(local_ccx_path), "-i", job_name]
                     proc = subprocess.run(
                         cmd,
                         cwd=str(local_dll_dir),
@@ -373,7 +359,7 @@ class CalculixSolver(BaseSolver):
                     if inp_in_dlls.exists():
                         inp_in_dlls.unlink()
                 else:
-                    # 直接运行（系统 MSYS2 或其他）
+                    # 直接运行
                     cmd = [str(binary), "-i", job_name]
                     proc = subprocess.run(
                         cmd,

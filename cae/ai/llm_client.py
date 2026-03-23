@@ -327,10 +327,33 @@ class LLMClient:
         except ImportError:
             pass
 
-        possible_pythons = [
-            "C:/Users/yd576/AppData/Local/Programs/Python/Python310/python.exe",
-            "C:/Users/yd576/AppData/Local/Programs/Python/Python39/python.exe",
+        # 搜索系统中可能的 Python 安装路径
+        import shutil
+        possible_pythons = set()
+
+        # 从 PATH 中查找 python
+        for name in ["python", "python3", "python.exe", "python3.exe"]:
+            found = shutil.which(name)
+            if found:
+                possible_pythons.add(found)
+
+        # 添加常见 Python 安装路径
+        import os
+        common_paths = [
+            "C:/Users/" + os.environ.get("USERNAME", "user") + "/AppData/Local/Programs/Python",
+            "C:/Python310",
+            "C:/Python39",
+            "C:/Python311",
+            "C:/Python312",
+            "C:/Program Files/Python310",
+            "C:/Program Files/Python39",
         ]
+        for base in common_paths:
+            if os.path.isdir(base):
+                for subdir in os.listdir(base) if os.path.isdir(base) else []:
+                    py_path = os.path.join(base, subdir, "python.exe")
+                    if os.path.isfile(py_path):
+                        possible_pythons.add(py_path)
 
         for py in possible_pythons:
             try:

@@ -299,17 +299,36 @@ def _parse_nodes(lines: list[str], start: int) -> tuple[int, FrdNodes]:
     coords: list[tuple[float, float, float]] = []
     i = start + 1
 
+    # 匹配科学计数法数字（包括可能紧贴的负号）
+    # 例如 "0.00000E+00-5.00000E-01" 会被正确拆分为 "0.00000E+00" 和 "-5.00000E-01"
+    number_pattern = r'[+-]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?'
+
     while i < len(lines):
         line = lines[i]
         if line.startswith(" -1"):
-            # 节点行格式：" -1  <id>  <x>  <y>  <z>"
-            parts = line.split()
-            if len(parts) >= 5:
-                try:
-                    ids.append(int(parts[1]))
-                    coords.append((float(parts[2]), float(parts[3]), float(parts[4])))
-                except (ValueError, IndexError):
-                    pass
+            matches = re.findall(number_pattern, line)
+            # 格式: [-1, node_id, x, y, z] 或 [node_id, x, y, z]
+            # 需要至少4个数值
+            if len(matches) >= 5:
+                # 第一个是行标记-1，跳过
+                nid = int(matches[1])
+                x = float(matches[2])
+                y = float(matches[3])
+                z = float(matches[4])
+            elif len(matches) >= 4:
+                nid = int(matches[0])
+                x = float(matches[1])
+                y = float(matches[2])
+                z = float(matches[3])
+            else:
+                i += 1
+                continue
+
+            # 验证节点ID是合理的（通常是正整数）
+            if nid > 0:
+                ids.append(nid)
+                coords.append((x, y, z))
+
         elif line.startswith(" -3"):
             i += 1
             break
@@ -411,10 +430,25 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
     while i < len(lines):
         line = lines[i]
 
-        # 分量定义行
+        # -4 行可能包含实际字段名（如 DISP、STRESS）
+        # 格式：" -4  DISP        4    1"
         if line.startswith(" -4"):
-            pass
-        elif line.startswith(" -5"):
+            parts4 = line.split()
+            if len(parts4) >= 2:
+                candidate = parts4[1]
+                # 如果 parts[1] 不是数字，说明是字段名
+                if not candidate.isdigit():
+                    field_name = candidate
+                    # 更新 entity
+                    try:
+                        entity = FrdResultEntity(field_name)
+                    except ValueError:
+                        entity = FrdResultEntity.DISP
+            i += 1
+            continue
+
+        # 分量定义行
+        if line.startswith(" -5"):
             # 分量名行：" -5  D1  1  2  1  0"
             parts5 = line.split()
             if len(parts5) >= 2:
