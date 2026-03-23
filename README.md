@@ -174,7 +174,8 @@ pip install cae-cxx[report]
 ```bash
 cae solve model.inp                    # 标准求解
 cae solve model.inp -o results/      # 输出到目录
-cae solve model.inp -t 3600          # 超时 1 小时
+cae solve model.inp --timeout 7200    # 超时 2 小时
+cae solve model.inp -s calculix       # 指定求解器
 ```
 
 ### `cae mesh` — 网格
