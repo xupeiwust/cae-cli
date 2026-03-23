@@ -280,17 +280,57 @@ def _check_displacement_range(results_dir: Path) -> list[DiagnosticIssue]:
 
 
 def _get_stderr_summary(results_dir: Path) -> str:
-    """收集所有 .sta / .dat 文件内容作为摘要。"""
+    """收集所有 .sta / .dat 文件内容作为摘要。
+
+    收集策略：
+    1. 最后 50 行（反映求解结束状态）
+    2. 关键词匹配行（反映早期警告/错误）
+    """
     summaries: list[str] = []
+
+    # 关键词列表：反映问题或迭代状态
+    keyword_patterns = (
+        "error", "ERROR", "warning", "WARNING",
+        "not converge", "NOT CONVERGED", "converged",
+        "increment", "INCREMENT", "iteration", "ITERATION",
+        "displacement", "DISPLACEMENT", "stress", "STRESS",
+        "factor", "FACTOR", "ratio", "RATIO",
+        "zero", "ZERO", "negative", "NEGATIVE",
+        "singular", "SINGULAR", "Jacobian",
+    )
 
     for ext in ("*.sta", "*.dat", "*.cvg"):
         for f in results_dir.glob(ext):
             try:
                 text = f.read_text(encoding="utf-8", errors="replace")
-                # 取最后 50 行
                 lines = text.strip().splitlines()
-                summaries.append(f"=== {f.name} (last 50 lines) ===")
-                summaries.extend(lines[-50:])
+
+                # 1. 最后 50 行
+                last_lines = lines[-50:] if len(lines) > 50 else lines
+
+                # 2. 关键词匹配行（不限位置，捕捉早期警告）
+                keyword_lines = [
+                    line for line in lines
+                    if any(kw in line for kw in keyword_patterns)
+                ]
+                # 限制关键词行数量避免过长
+                keyword_lines = keyword_lines[-30:] if len(keyword_lines) > 30 else keyword_lines
+
+                # 去重合并
+                seen = set()
+                combined: list[str] = []
+                for line in last_lines:
+                    if line not in seen:
+                        seen.add(line)
+                        combined.append(line)
+                for line in keyword_lines:
+                    if line not in seen:
+                        seen.add(line)
+                        combined.append(line)
+
+                if combined:
+                    summaries.append(f"=== {f.name} ===")
+                    summaries.extend(combined)
             except OSError:
                 pass
 
