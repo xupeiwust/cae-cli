@@ -5,9 +5,9 @@
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.2.5-blue.svg)](https://pypi.org/project/cae-cxx/)
+[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.3.1-blue.svg)](https://pypi.org/project/cae-cxx/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Test](https://img.shields.io/badge/Tests-112%20passed-brightgreen.svg)](#兼容性验证)
+[![Test](https://img.shields.io/badge/Tests-100%20passed-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
 
 </p>
@@ -34,16 +34,19 @@
 
 ## 新增功能
 
-### v1.2.5 (2026-03)
+### v1.3.1 (2026-03)
 
-**Bug 修复**：
-- 修复 FRD 解析器无法正确解析科学计数法数字
-- 修复 -4 行字段名解析错误
-- 修复 VTK 导出时 values 字典访问错误
-- 移除硬编码路径，改用 Path(__file__) 相对定位
-- 修复 Ctrl+C 无法退出可视化服务（ThreadingTCPServer）
+**三层次诊断系统**：
+- Level 1（规则检测）：收敛性、网格质量、应力集中、位移范围
+- Level 2（参考案例对比）：638 个 CalculiX 官方测试集案例匹配
+- Level 3（AI 深度分析）：可选，需要 `pip install cae-cxx[ai]`
 
-### v1.3.0 (开发中)
+**AI 可选插件**：
+- `cae install` — 只安装 CalculiX 求解器
+- `cae install ai` — 单独安装 AI 模型
+- 不安装 AI 时仍可使用规则检测 + 参考案例对比
+
+### v1.3.0
 
 **协议接口**：所有关键词类实现 `IKeyword` 协议，支持类型检查和 IDE 自动补全
 
@@ -81,6 +84,9 @@ cae inp template cantilever_beam -o beam.inp
 
 # 3. 求解 + 查看结果
 cae solve beam.inp && cae view results/
+
+# 4. (可选) 安装 AI 模型
+cae install ai
 ```
 
 **输出示例：**
@@ -128,11 +134,16 @@ cae solve beam.inp && cae view results/
 
 | 功能 | 命令 | 说明 |
 |------|------|------|
-| 📥 安装模型 | `cae model install deepseek-r1-7b` | ~5 GB |
+| 📥 安装模型 | `cae install ai` | ~5 GB |
+| 🔍 三层诊断 | `cae diagnose results/ -i model.inp` | 规则+案例+AI(可选) |
 | 📊 AI 解读 | `cae explain results/` | 位移/应力分析 |
-| 🔍 AI 诊断 | `cae diagnose results/` | 收敛性/网格质量 |
 | 💡 AI 建议 | `cae suggest results/` | 优化方案 |
 | 📄 PDF 报告 | `cae report results/` | 最大位移/应力/安全系数/云图，一键发给导师 |
+
+**诊断三层架构：**
+- Level 1 — 规则检测（无条件）：收敛性、网格质量、应力集中、位移范围
+- Level 2 — 参考案例对比（无条件）：638 个 CalculiX 官方测试集匹配
+- Level 3 — AI 深度分析（可选）：需要 `pip install cae-cxx[ai]`
 
 ### 格式转换
 
@@ -150,11 +161,11 @@ cae solve beam.inp && cae view results/
 # 基础安装
 pip install cae-cxx
 
-# 完整安装（含 AI + 网格 + PDF 报告）
-pip install cae-cxx[ai,mesh,report]
+# 安装 AI 支持
+pip install cae-cxx[ai]
 
-# 仅安装 PDF 报告支持
-pip install cae-cxx[report]
+# 安装网格和 PDF 支持
+pip install cae-cxx[mesh,report]
 ```
 
 ### 安装求解器
@@ -164,6 +175,13 @@ pip install cae-cxx[report]
 | Windows | `cae install` | [calculix.org](https://calculix.org) |
 | macOS | `cae install` | `brew install calculix` |
 | Ubuntu | `cae install` | `sudo apt install calculix-ccx` |
+
+### 安装 AI 模型
+
+```bash
+cae install ai                    # 安装默认模型 (deepseek-r1-7b)
+cae install ai --model deepseek-r1-14b  # 安装大模型
+```
 
 ---
 
@@ -202,14 +220,12 @@ cae inp template cantilever_beam -o beam.inp # 生成
 cae inp suggest model.inp                    # AI 建议
 ```
 
-### `cae model` — AI 模型
+### `cae diagnose` — 三层诊断
 
 ```bash
-cae model list                                      # 模型列表
-cae model install deepseek-r1-7b                    # 安装
-cae model install deepseek-r1-7b -m hf-mirror.com  # 镜像
-cae model info deepseek-r1-7b                       # 信息
-cae model uninstall deepseek-r1-7b                  # 卸载
+cae diagnose results/                        # 规则+案例检测（无需 AI）
+cae diagnose results/ -i model.inp         # 指定 INP 进行案例匹配
+cae diagnose results/ -i model.inp --no-ai  # 跳过 AI 分析
 ```
 
 ### `cae test` — 测试
@@ -342,6 +358,12 @@ print(model.to_inp())
 | 求解执行 | ✅ 8/10 | 声学分析除外 |
 | 格式转换 | ✅ 8/8 (100%) | 100% |
 
+**638 个测试用例已提取参考数据**：
+- 332 个案例包含位移参考值
+- 149 个案例包含应力参考值
+- 单元类型、边界条件、载荷类型等元数据完整
+- 用于三层次诊断系统的 Level 2 参考案例对比
+
 **覆盖单元类型：**
 - 实体单元：C3D4/6/8/15/20（含二阶）
 - 壳单元：S3/4/6/8（含减缩积分）
@@ -405,12 +427,14 @@ cae-cli/
 │   ├── ai/                  # AI 功能
 │   │   ├── llm_client.py    # LLM 接口
 │   │   ├── explain.py       # 结果解读
-│   │   ├── diagnose.py       # 问题诊断
+│   │   ├── diagnose.py       # 三层诊断 (规则/案例/AI)
+│   │   ├── reference_cases.py # 638 参考案例库
+│   │   ├── prompts.py       # Prompt 模板库
 │   │   └── suggest.py        # 优化建议
 │   └── installer/           # 安装器
-│       ├── solver_installer.py
-│       └── model_installer.py
-├── tests/                  # 测试用例 (112 passed)
+│       ├── solver_installer.py  # CalculiX 求解器
+│       └── model_installer.py   # AI 模型
+├── tests/                  # 测试用例 (100 passed)
 └── examples/              # 示例文件
 ```
 
