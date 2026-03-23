@@ -5,7 +5,7 @@
 <p align="center">
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
-[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.3.0-blue.svg)](https://pypi.org/project/cae-cxx/)
+[![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.2.5-blue.svg)](https://pypi.org/project/cae-cxx/)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Test](https://img.shields.io/badge/Tests-112%20passed-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
@@ -34,7 +34,16 @@
 
 ## 新增功能
 
-### v1.3.0 (2026-03)
+### v1.2.5 (2026-03)
+
+**Bug 修复**：
+- 修复 FRD 解析器无法正确解析科学计数法数字
+- 修复 -4 行字段名解析错误
+- 修复 VTK 导出时 values 字典访问错误
+- 移除硬编码路径，改用 Path(__file__) 相对定位
+- 修复 Ctrl+C 无法退出可视化服务（ThreadingTCPServer）
+
+### v1.3.0 (开发中)
 
 **协议接口**：所有关键词类实现 `IKeyword` 协议，支持类型检查和 IDE 自动补全
 
