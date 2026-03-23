@@ -1832,63 +1832,46 @@ def convert(
 
 @app.command()
 def install(
-    solver_only: bool = typer.Option(False, "--solver-only", help="只安装 CalculiX"),
-    model_only:  bool = typer.Option(False, "--model-only",  help="只安装默认 AI 模型"),
-    model_name:  str  = typer.Option("deepseek-r1-7b", "--model", help="指定模型名称"),
 ) -> None:
     """
-    [bold]下载并安装 CalculiX 求解器 + AI 模型[/bold]
+    [bold]安装 CalculiX 求解器[/bold]
 
     \b
     示例：
-      cae install                        # 全部安装
-      cae install --solver-only          # 只装求解器
-      cae install --model deepseek-r1-14b
+      cae install
     """
     from cae.installer.solver_installer import SolverInstaller
-    from cae.installer.model_installer import ModelInstaller
 
     console.print()
-    console.print(Panel.fit("[bold cyan]cae install[/bold cyan] — 安装求解器与 AI 模型", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]cae install[/bold cyan] — 安装 CalculiX 求解器", border_style="cyan"))
     console.print()
 
     # ---- 安装 CalculiX ----
     solver_result = None
     solver_install_path = None
-    if not model_only:
-        console.print("  [bold]安装 CalculiX 求解器[/bold]")
+    console.print("  [bold]安装 CalculiX 求解器[/bold]")
 
-        # 询问安装路径
-        default_path = str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin")
-        raw_path = typer.prompt(
-            "  安装路径",
-            default=default_path,
-            show_default=True,
-        )
-        install_path = Path(raw_path.strip())
+    # 询问安装路径
+    default_path = str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin")
+    raw_path = typer.prompt(
+        "  安装路径",
+        default=default_path,
+        show_default=True,
+    )
+    install_path = Path(raw_path.strip())
 
-        # 确保路径格式正确（如果是文件路径则取父目录）
-        if install_path.name == "ccx.exe" or ".exe" in install_path.name:
-            install_path = install_path.parent
+    # 确保路径格式正确（如果是文件路径则取父目录）
+    if install_path.name == "ccx.exe" or ".exe" in install_path.name:
+        install_path = install_path.parent
 
-        installer = SolverInstaller(install_dir=install_path)
+    installer = SolverInstaller(install_dir=install_path)
 
-        # 检查是否已安装
-        if installer.is_installed():
-            console.print(f"  CalculiX 已安装在: {installer.bin_dir}")
-            reinstall = typer.prompt("  是否重新安装？", default="n", show_default=True)
-            if reinstall.lower() != "y":
-                console.print("  跳过安装\n")
-            else:
-                console.print()
-                with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                              TimeElapsedColumn(), console=console) as progress:
-                    task = progress.add_task("  正在安装...", total=None)
-
-                    def _solver_progress(pct: float, msg: str) -> None:
-                        progress.update(task, description=f"  {msg}")
-
-                    solver_result = installer.install(progress_callback=_solver_progress, force=True)
+    # 检查是否已安装
+    if installer.is_installed():
+        console.print(f"  CalculiX 已安装在: {installer.bin_dir}")
+        reinstall = typer.prompt("  是否重新安装？", default="n", show_default=True)
+        if reinstall.lower() != "y":
+            console.print("  跳过安装\n")
         else:
             console.print()
             with Progress(SpinnerColumn(), TextColumn("{task.description}"),
@@ -1898,66 +1881,90 @@ def install(
                 def _solver_progress(pct: float, msg: str) -> None:
                     progress.update(task, description=f"  {msg}")
 
-                solver_result = installer.install(progress_callback=_solver_progress)
+                solver_result = installer.install(progress_callback=_solver_progress, force=True)
+    else:
+        console.print()
+        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                      TimeElapsedColumn(), console=console) as progress:
+            task = progress.add_task("  正在安装...", total=None)
 
-        if solver_result and solver_result.success:
-            solver_install_path = solver_result.install_dir or installer.get_install_dir()
-            console.print()
-            console.print(f"  [green]CalculiX 安装成功[/green]")
-            console.print(f"  路径: {solver_install_path}")
-            console.print()
-        elif solver_result:
-            console.print()
-            console.print(f"  [red]CalculiX 安装失败[/red]")
-            console.print(f"  {solver_result.error_message}")
-            console.print()
-        else:
-            console.print()
+            def _solver_progress(pct: float, msg: str) -> None:
+                progress.update(task, description=f"  {msg}")
 
-    # ---- 安装 AI 模型 ----
-    if not solver_only and solver_result and solver_result.success:
-        # 安装完求解器后询问是否安装 AI 模型
-        console.print("  [bold]安装 AI 模型[/bold]")
-        install_ai = typer.prompt("  是否安装 AI 模型？", default="n", show_default=True)
+            solver_result = installer.install(progress_callback=_solver_progress)
 
-        if install_ai.lower() == "y":
-            mi = ModelInstaller()
-
-            if mi.is_installed(model_name):
-                console.print(f"  模型已安装: {model_name}\n")
-                mi.activate(model_name)
-            else:
-                from cae.installer.model_installer import KNOWN_MODELS
-                meta = KNOWN_MODELS.get(model_name)
-                if meta is None:
-                    console.print(f"  [red]错误:[/red] 未知模型 '{model_name}'")
-                    console.print(f"  可用模型: {', '.join(KNOWN_MODELS.keys())}\n")
-                else:
-                    size = meta.size_gb
-                    console.print(f"  模型: [cyan]{model_name}[/cyan]  大小: ~{size} GB")
-                    console.print("  这可能需要几分钟，取决于网络速度...\n")
-
-                    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                                  TimeElapsedColumn(), console=console) as progress:
-                        task = progress.add_task("  下载中...", total=None)
-
-                        def _model_progress(pct: float, msg: str) -> None:
-                            progress.update(task, description=f"  {msg}")
-
-                        result = mi.install(model_name, progress_callback=_model_progress)
-
-                    if result.success:
-                        console.print()
-                        console.print(f"  [green]AI 模型安装成功[/green]")
-                    else:
-                        console.print()
-                        console.print(f"  [yellow]AI 模型安装失败[/yellow]")
-                        console.print(f"  {result.error_message}")
-                        console.print()
-        else:
-            console.print()
+    if solver_result and solver_result.success:
+        solver_install_path = solver_result.install_dir or installer.get_install_dir()
+        console.print()
+        console.print(f"  [green]CalculiX 安装成功[/green]")
+        console.print(f"  路径: {solver_install_path}")
+        console.print()
+    elif solver_result:
+        console.print()
+        console.print(f"  [red]CalculiX 安装失败[/red]")
+        console.print(f"  {solver_result.error_message}")
+        console.print()
+    else:
+        console.print()
 
     console.print("  现在可以运行 [bold]`cae solve`[/bold] 开始仿真\n")
+    console.print("  AI 模型安装: [bold]`cae install ai`[/bold]\n")
+
+
+@app.command(name="install ai")
+def install_ai(
+    model_name: str = typer.Option("deepseek-r1-7b", "--model", help="指定模型名称"),
+) -> None:
+    """
+    [bold]安装 AI 模型[/bold]
+
+    \b
+    示例：
+      cae install ai
+      cae install ai --model deepseek-r1-14b
+    """
+    from cae.installer.model_installer import ModelInstaller
+
+    console.print()
+    console.print(Panel.fit("[bold cyan]cae install ai[/bold cyan] — 安装 AI 模型", border_style="cyan"))
+    console.print()
+
+    mi = ModelInstaller()
+
+    if mi.is_installed(model_name):
+        console.print(f"  模型已安装: {model_name}\n")
+        mi.activate(model_name)
+        return
+
+    from cae.installer.model_installer import KNOWN_MODELS
+    meta = KNOWN_MODELS.get(model_name)
+    if meta is None:
+        console.print(f"  [red]错误:[/red] 未知模型 '{model_name}'")
+        console.print(f"  可用模型: {', '.join(KNOWN_MODELS.keys())}\n")
+        return
+
+    size = meta.size_gb
+    console.print(f"  模型: [cyan]{model_name}[/cyan]  大小: ~{size} GB")
+    console.print("  这可能需要几分钟，取决于网络速度...\n")
+
+    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
+                  TimeElapsedColumn(), console=console) as progress:
+        task = progress.add_task("  下载中...", total=None)
+
+        def _model_progress(pct: float, msg: str) -> None:
+            progress.update(task, description=f"  {msg}")
+
+        result = mi.install(model_name, progress_callback=_model_progress)
+
+    if result.success:
+        console.print()
+        console.print(f"  [green]AI 模型安装成功[/green]")
+        console.print(f"  使用 [bold]`cae diagnose --help`[/bold] 查看 AI 诊断功能\n")
+    else:
+        console.print()
+        console.print(f"  [yellow]AI 模型安装失败[/yellow]")
+        console.print(f"  {result.error_message}")
+        console.print()
 
 
 # ------------------------------------------------------------------ #
