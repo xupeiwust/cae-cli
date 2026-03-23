@@ -1,6 +1,6 @@
 # cae-cli
 
-> **轻量化 CAE 命令行工具** — 一条命令跑仿真，一个链接看结果
+> **工程师的本地 AI 助手 + 快速验证工具** — 一条命令跑仿真，AI 帮你诊断问题
 
 <p align="center">
 
@@ -13,7 +13,7 @@
 
 </p>
 
-**机械学生 | 独立工程师 | 小型实验室** — 用不起 ANSYS/Abaqus 的替代方案
+**学生 | 工程师 | 独立开发者** — 快速验证想法，AI 辅助分析，本地运行保护数据隐私
 
 ---
 
@@ -83,24 +83,29 @@ pip install cae-cxx && cae install
 # 2. 生成悬臂梁模板
 cae inp template cantilever_beam -o beam.inp
 
-# 3. 求解 + 查看结果
-cae solve beam.inp && cae view results/
+# 3. 求解
+cae solve beam.inp
 
-# 4. (可选) 安装 AI 模型
-cae install ai
+# 4. AI 诊断（可选）
+cae diagnose results/
 ```
 
 **输出示例：**
 
 ```
+$ cae solve beam.inp
 ╭───────────────────────╮
 ║  求解完成！  0.1s   ║
 ╰───────────────────────╯
 
-  achtel2.cvg   278 B
-  achtel2.dat   16 KB
-  achtel2.frd   24 KB
-  achtel2.sta   173 B
+$ cae diagnose results/
+规则检测：发现 1 个问题
+[!] [mesh_quality] 节点/单元比例过低 (0.26)
+  -> 检查网格划分参数
+
+参考案例匹配：找到 3 个相似案例
+- beam1t (相似度 95.2%)
+  预期位移: 1.234e-01
 ```
 
 浏览器自动打开 ParaView Glance 显示位移 / 应力云图
@@ -109,7 +114,16 @@ cae install ai
 
 ## 核心能力
 
-### 仿真全流程
+### 🎯 快速验证（30 秒启动，一条命令出结果）
+
+| 功能 | 命令 | 说明 |
+|:----:|------|------|
+| ⚡ 执行仿真 | `cae solve model.inp` | CalculiX 求解 |
+| 🌐 3D 可视化 | `cae view results/` | 浏览器打开 |
+| 🔍 AI 诊断 | `cae diagnose results/` | 自动发现 4 类问题 |
+| 📄 PDF 报告 | `cae report results/` | 一键生成报告 |
+
+### 📦 完整仿真流程
 
 | 功能 | 命令 | 说明 |
 |:----:|------|------|
@@ -330,22 +344,16 @@ print(model.to_inp())
 > ✅ 支持，Windows 10/11 + Python 3.10+
 
 **Q: 和 ANSYS/Abaqus 有什么区别？**
+> cae-cli 不追求替代商业软件，而是专注于**快速验证**和**AI 辅助**。当你有一个想法想快速验证时，30 秒启动，一条命令出结果。商业软件适合交付最终设计，cae-cli 适合探索初期方案。
 
-| 对比 | cae-cxx | ANSYS/Abaqus |
-|------|---------|--------------|
-| 价格 | 免费 | 几万~几十万/年 |
-| 功能 | 核心 FEA | 完整多物理场 |
-| 门槛 | 命令行 | GUI 交互 |
-| 适用 | 简单结构/学习 | 复杂工程 |
+**Q: AI 能帮我做什么？**
+> 三层诊断系统：1) 自动检测收敛性、网格质量、应力集中问题；2) 对比 638 个官方测试案例判断结果是否合理；3) AI 深度分析给出修复建议。简单问题秒级诊断，复杂问题给出排查方向。
 
-**Q: 支持 GUI 吗？**
-> 结果可通过浏览器 3D 可视化（ParaView Glance），核心操作仍是命令行
+**Q: 数据安全吗？**
+> 所有计算和 AI 分析都在本地运行，不上传任何数据。适合处理涉及机密或敏感数据的项目。
 
-**Q: 计算精度如何？**
-> 使用与 ANSYS/Abaqus 相同的 CalculiX 求解器，638 个官方测试用例 100% 通过
-
-**Q: 模型文件多大？**
-> AI 模型约 5 GB（Q4 量化），CalculiX 求解器约 50 MB
+**Q: 需要 GPU 吗？**
+> 不需要。CalculiX 求解器和 AI 模型都支持 CPU 运行。AI 模型约 5 GB（Q4 量化），在普通笔记本上即可运行。
 
 ---
 
