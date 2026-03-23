@@ -880,8 +880,8 @@ def solve(
 
     if binary is None:
         # 询问用户求解器路径
-        console.print("  [yellow]未找到求解器，请指定 CalculiX 路径[/yellow]")
-        console.print()
+        err_console.print("  [yellow]未找到求解器，请指定 CalculiX 路径[/yellow]")
+        err_console.print()
 
         # 尝试查找可能的路径
         possible_paths = [
