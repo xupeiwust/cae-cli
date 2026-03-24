@@ -118,6 +118,7 @@ def make_diagnose_prompt(
     rule_issues: list[dict],
     stderr_summary: str,
     similar_cases: Optional[list[dict]] = None,
+    physical_data: str = "",
 ) -> str:
     """生成诊断的 prompt。"""
     issues_text = "\n".join(
@@ -138,11 +139,16 @@ def make_diagnose_prompt(
     else:
         cases_text = "\n\n### 相似参考案例\n（无可用参考案例）"
 
+    # 物理数据
+    physical_text = ""
+    if physical_data:
+        physical_text = f"\n### 关键物理数据\n{physical_data}\n"
+
     return f"""## 诊断摘要
 
 ### 规则检测结果
 {issues_text}
-{cases_text}
+{cases_text}{physical_text}
 
 ### 求解器输出摘要（最后50行）
 ```

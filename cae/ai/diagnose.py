@@ -68,7 +68,7 @@ class DiagnoseResult:
 
 
 def diagnose_results(
-    results_dir: Path,
+    results_dir: Path | str,
     client: Optional[LLMClient] = None,
     inp_file: Optional[Path] = None,
     *,
@@ -87,6 +87,10 @@ def diagnose_results(
         DiagnoseResult
     """
     result = DiagnoseResult(success=True)
+
+    # 确保 results_dir 是 Path 对象
+    if isinstance(results_dir, str):
+        results_dir = Path(results_dir)
 
     try:
         # ========== Level 1: 规则检测（无条件执行）==========
@@ -434,10 +438,12 @@ def _run_ai_diagnosis(
     """运行 AI 深度诊断。"""
     try:
         stderr_summary = _get_stderr_summary(results_dir)
+        physical_data = _get_physical_data(results_dir)  # 新增：提取物理数据
 
         all_issues = level1_issues + level2_issues
-        if not all_issues:
-            return None
+        # 即使没有问题，也提取诊断信息（用于用户了解结果）
+        # if not all_issues:
+        #     return None
 
         issue_dicts = [
             {
@@ -450,7 +456,7 @@ def _run_ai_diagnosis(
             for i in all_issues
         ]
 
-        prompt_text = make_diagnose_prompt(issue_dicts, stderr_summary, similar_cases)
+        prompt_text = make_diagnose_prompt(issue_dicts, stderr_summary, similar_cases, physical_data)
 
         if stream:
             handler = StreamHandler()
@@ -462,6 +468,51 @@ def _run_ai_diagnosis(
     except Exception as e:
         log.warning("AI 诊断失败: %s", e)
         return None
+
+
+def _get_physical_data(results_dir: Path) -> str:
+    """从 .frd 文件提取关键物理数据用于 AI 分析。"""
+    try:
+        frd_file = _find_frd(results_dir)
+        if not frd_file:
+            return ""
+
+        frd_data = parse_frd(frd_file)
+        lines = []
+
+        # 节点/单元数
+        lines.append(f"节点数: {frd_data.node_count}, 单元数: {frd_data.element_count}")
+
+        # 位移
+        disp_result = frd_data.get_result("DISP")
+        if disp_result and disp_result.values:
+            max_disp = 0.0
+            max_node = 0
+            for node_id, vals in disp_result.values.items():
+                if vals is not None and len(vals) > 0:
+                    magnitude = sum(float(v) ** 2 for v in vals) ** 0.5
+                    if magnitude > max_disp:
+                        max_disp = magnitude
+                        max_node = node_id
+            lines.append(f"最大位移: {max_disp:.6e} (节点 {max_node})")
+
+        # 应力
+        stress_result = frd_data.get_result("STRESS")
+        if stress_result and stress_result.values:
+            max_stress = 0.0
+            max_elem = 0
+            for elem_id, vals in stress_result.values.items():
+                if vals is not None and len(vals) >= 4:
+                    vm = abs(float(vals[3]))  # von Mises
+                    if vm > max_stress:
+                        max_stress = vm
+                        max_elem = elem_id
+            lines.append(f"最大 von Mises 应力: {max_stress:.6e} (单元 {max_elem})")
+
+        return "\n".join(lines)
+    except Exception as e:
+        log.warning("提取物理数据失败: %s", e)
+        return ""
 
 
 def _get_stderr_summary(results_dir: Path) -> str:

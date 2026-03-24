@@ -307,6 +307,7 @@ class CaseDatabase:
 
         cases = []
         for name, meta_dict in data.items():
+            meta_dict.pop("name", None)  # 避免重复 name 参数
             cases.append(CaseMetadata(name=name, **meta_dict))
 
         return cls(cases)

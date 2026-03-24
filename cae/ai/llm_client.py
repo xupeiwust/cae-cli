@@ -36,6 +36,7 @@ class LLMConfig:
     n_batch: int = 512  # 批处理大小
     timeout: int = 30
     use_server: bool = False  # 默认使用 direct 模式
+    use_ollama: bool = False  # 使用 Ollama 后端
 
 
 @dataclass
@@ -53,6 +54,7 @@ class LLMClient:
         if self.config is None:
             self.config = LLMConfig()
         self._base_url = f"http://127.0.0.1:{self.config.port}"
+        self._ollama_url = "http://localhost:11434/api/generate"  # Ollama API
 
     # ------------------------------------------------------------------ #
     # 生命周期
@@ -200,6 +202,8 @@ class LLMClient:
         Returns:
             完整生成的文本
         """
+        if self.config.use_ollama:
+            return self._complete_ollama(prompt, max_tokens, temperature)
         if self._llm:
             return self._complete_direct(prompt, max_tokens, temperature, stop)
         return self._complete_server(prompt, max_tokens, temperature, stop, stream=False)
@@ -247,6 +251,34 @@ class LLMClient:
         data = resp.json()
         return data.get("content", "")
 
+    def _complete_ollama(
+        self,
+        prompt: str,
+        max_tokens: int,
+        temperature: float,
+    ) -> str:
+        """Ollama 后端补全。"""
+        model_name = self.config.model_name or "deepseek-r1:1.5b"
+        payload = {
+            "model": model_name,
+            "prompt": prompt,
+            "options": {
+                "num_predict": max_tokens,
+                "temperature": temperature,
+            },
+            "stream": False,
+        }
+
+        resp = requests.post(self._ollama_url, json=payload, timeout=max_tokens * 3)
+        resp.raise_for_status()
+        data = resp.json()
+        # DeepSeek-R1 使用 thinking 字段存储推理过程
+        thinking = data.get("thinking", "")
+        response = data.get("response", "")
+        if thinking and not response:
+            return thinking
+        return response
+
     def complete_streaming(self, prompt: str, **kwargs) -> Iterator[str]:
         """
         流式补全，yield 每个 token。
@@ -257,6 +289,12 @@ class LLMClient:
         max_tokens = kwargs.get("max_tokens", 2048)
         temperature = kwargs.get("temperature", 0.7)
         stop = kwargs.get("stop", [])
+
+        if self.config.use_ollama:
+            # Ollama 非流式（简化处理）
+            result = self._complete_ollama(prompt, max_tokens, temperature)
+            yield result
+            return
 
         if self._llm:
             return self._stream_direct(prompt, max_tokens, temperature, stop)

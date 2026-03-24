@@ -332,12 +332,10 @@ def suggest(
     # AI client
     client = None
     if not no_ai:
-        client = LLMClient()
-        if not client.is_running():
-            console.print("  llama-server 未运行，使用规则建议\n")
-            client = None
-        else:
-            console.print("  AI 正在分析，请稍候...\n")
+        from cae.ai.llm_client import LLMConfig
+        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        client = LLMClient(config=config)
+        console.print("  AI 正在分析，请稍候...\n")
 
     result = suggest_inp_modifications(inp_file, diagnose_issues, client, stream=stream)
 
@@ -2055,14 +2053,9 @@ def explain(
         raw = typer.prompt("  请输入结果目录路径")
         results_dir = Path(raw.strip())
 
-    client = LLMClient()
-    if not client.is_running():
-        console.print("  llama-server 未运行，尝试自动启动...")
-        if not client.start_server():
-            err_console.print(
-                "\n  无法启动 AI 服务。请先运行 [bold]`cae install`[/bold] 安装模型。\n"
-            )
-            raise typer.Exit(1)
+    from cae.ai.llm_client import LLMConfig
+    config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+    client = LLMClient(config=config)
 
     console.print("  AI 正在分析，请稍候...\n")
     result = explain_results(results_dir, client, stream=stream)
@@ -2098,10 +2091,9 @@ def suggest(
     # 先做诊断
     client = None
     if not no_ai:
-        client = LLMClient()
-        if not client.is_running():
-            console.print("  llama-server 未运行，仅生成规则建议\n")
-            client = None
+        from cae.ai.llm_client import LLMConfig
+        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        client = LLMClient(config=config)
 
     # 执行诊断
     diagnose_result = diagnose_results(results_dir, client, stream=False)
@@ -2161,10 +2153,10 @@ def diagnose(
 
     client = None
     if not no_ai:
-        client = LLMClient()
-        if not client.is_running():
-            console.print("  llama-server 未运行，仅执行规则+案例检测\n")
-            client = None
+        from cae.ai.llm_client import LLMConfig
+        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        client = LLMClient(config=config)
+        # Ollama 不使用 llama-server，跳过 is_running 检查
 
     result = diagnose_results(results_dir, client, inp_file=inp_file, stream=stream)
 
