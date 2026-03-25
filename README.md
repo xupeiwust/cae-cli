@@ -260,9 +260,7 @@ $ cae diagnose results/
 | 功能 | 命令 | 说明 |
 |------|------|------|
 | 📥 安装模型 | `cae install ai` | ~5 GB |
-| 🔍 三层诊断 | `cae diagnose results/ -i model.inp` | 规则+案例+AI(可选) |
-| 📊 AI 解读 | `cae explain results/` | 位移/应力分析 |
-| 💡 AI 建议 | `cae suggest results/` | 优化方案 |
+| 🔍 AI 诊断 | `cae diagnose results/ -i model.inp` | 规则+案例+AI+解读+建议 |
 | 📄 PDF 报告 | `cae report results/` | 最大位移/应力/安全系数/云图，一键发给导师 |
 
 **诊断三层架构：**
@@ -380,9 +378,11 @@ cae inp suggest model.inp                    # AI 建议
 ### `cae diagnose` — 三层诊断
 
 ```bash
-cae diagnose results/                        # 规则+案例检测（无需 AI）
-cae diagnose results/ -i model.inp         # 指定 INP 进行案例匹配
-cae diagnose results/ -i model.inp --no-ai  # 跳过 AI 分析
+cae diagnose results/                           # 规则+案例+AI解读+AI建议
+cae diagnose results/ -i model.inp            # 指定 INP 进行案例匹配
+cae diagnose results/ -i model.inp --no-ai    # 跳过 AI 分析
+cae diagnose results/ --no-explain             # 跳过 AI 解读
+cae diagnose results/ --no-suggest            # 跳过 AI 建议
 ```
 
 ### `cae test` — 测试
