@@ -1193,46 +1193,70 @@ def _get_physical_data(results_dir: Path) -> str:
 
 
 def _get_stderr_summary(results_dir: Path) -> str:
-    """收集所有 .sta / .dat / .cvg 文件内容作为摘要。"""
+    """
+    从 .sta 文件提取结构化收敛指标，不发送原始数据给 AI。
+
+    返回格式：
+    - 最大迭代次数
+    - 最终残差
+    - 收敛状态
+    - 时间/增量信息
+    """
     summaries: list[str] = []
 
-    keyword_patterns = (
-        "error", "ERROR", "warning", "WARNING",
-        "not converge", "NOT CONVERGED", "converged",
-        "increment", "INCREMENT", "iteration", "ITERATION",
-        "displacement", "DISPLACEMENT", "stress", "STRESS",
-        "factor", "FACTOR", "ratio", "RATIO",
-        "zero", "ZERO", "negative", "NEGATIVE",
-        "singular", "SINGULAR", "Jacobian",
-    )
+    for sta_file in results_dir.glob("*.sta"):
+        try:
+            text = sta_file.read_text(encoding="utf-8", errors="replace")
+            lines = text.strip().splitlines()
 
-    for ext in ("*.sta", "*.dat", "*.cvg"):
-        for f in results_dir.glob(ext):
-            try:
-                text = f.read_text(encoding="utf-8", errors="replace")
-                lines = text.strip().splitlines()
+            # 提取关键收敛指标
+            max_iterations = 0
+            final_residual = None
+            final_force_ratio = None
+            final_increment = None
+            converged = None
 
-                last_lines = lines[-50:] if len(lines) > 50 else lines
-                keyword_lines = [
-                    line for line in lines
-                    if any(kw in line for kw in keyword_patterns)
-                ][-30:]
+            for line in lines[-100:]:  # 只看最后100行
+                # 检测收敛状态
+                if "SUMMARY OF CONVERGENCY INFORMATION" in line or "CONVERGENCE" in line.upper():
+                    converged = "NOT CONVERGED" if "NOT" in line.upper() or "FAILED" in line.upper() else "CONVERGED"
+                # 检测最大迭代次数（step=XXX, inc=XXX, att=XXX, iter=XXX）
+                iter_match = re.search(r'iter[=\s]+(\d+)', line, re.IGNORECASE)
+                if iter_match:
+                    max_iterations = max(max_iterations, int(iter_match.group(1)))
+                # 检测残差（resid.=XXX）
+                resid_match = re.search(r'resid[.=\s]+(-?[\d.]+)', line, re.IGNORECASE)
+                if resid_match:
+                    final_residual = float(resid_match.group(1))
+                # 检测力比（force%=XXX）
+                force_match = re.search(r'force%?\s*=\s*([\d.]+)', line, re.IGNORECASE)
+                if force_match:
+                    final_force_ratio = float(force_match.group(1))
+                # 检测增量（increment size = XXX）
+                inc_match = re.search(r'increment\s+size\s*=\s*([\d.eE+-]+)', line, re.IGNORECASE)
+                if inc_match:
+                    try:
+                        final_increment = float(inc_match.group(1))
+                    except ValueError:
+                        pass
 
-                seen = set()
-                combined = []
-                for line in last_lines:
-                    if line not in seen:
-                        seen.add(line)
-                        combined.append(line)
-                for line in keyword_lines:
-                    if line not in seen:
-                        seen.add(line)
-                        combined.append(line)
+            # 构建结构化摘要（不发原始行）
+            if max_iterations > 0 or final_residual is not None:
+                parts = [f"文件名: {sta_file.name}"]
+                if converged:
+                    parts.append(f"收敛状态: {converged}")
+                if max_iterations > 0:
+                    parts.append(f"最大迭代次数: {max_iterations}")
+                if final_residual is not None:
+                    parts.append(f"最终残差: {final_residual:.4f}")
+                if final_force_ratio is not None:
+                    parts.append(f"最终力比: {final_force_ratio:.2f}%")
+                if final_increment is not None and final_increment > 0:
+                    parts.append(f"最终增量步: {final_increment:.2e}")
 
-                if combined:
-                    summaries.append(f"=== {f.name} ===")
-                    summaries.extend(combined)
-            except OSError:
-                pass
+                summaries.append(" | ".join(parts))
 
-    return "\n".join(summaries) if summaries else "（无详细日志）"
+        except OSError:
+            pass
+
+    return "\n".join(summaries) if summaries else "（无收敛数据）"
