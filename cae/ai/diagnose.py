@@ -116,6 +116,10 @@ def diagnose_results(
         result.level1_issues.extend(_check_load_transfer(results_dir))
         result.level1_issues.extend(_check_boundary_issues(results_dir))
         result.level1_issues.extend(_check_contact_issues(results_dir))
+        result.level1_issues.extend(_check_file_io_errors(results_dir))
+        result.level1_issues.extend(_check_user_element_errors(results_dir))
+        result.level1_issues.extend(_check_mpc_limits(results_dir))
+        result.level1_issues.extend(_check_dynamics_errors(results_dir))
 
         # ========== Level 2: 参考案例对比（无条件执行）==========
         ref_result = _check_reference_cases(results_dir, inp_file)
@@ -156,11 +160,15 @@ JACOBIAN_PATTERNS = [
     re.compile(r"nonpositive jacobian", re.IGNORECASE),
 ]
 
-# 收敛性问题检测模式
+# 收敛性问题检测模式（增强自 calculix_patterns.txt）
 CONVERGENCE_PATTERNS = [
     re.compile(r"not\s+converged", re.IGNORECASE),
     re.compile(r"increment\s+size\s+smaller", re.IGNORECASE),
     re.compile(r"divergence", re.IGNORECASE),
+    re.compile(r"no\s+convergence", re.IGNORECASE),
+    re.compile(r"convergence\s+failed", re.IGNORECASE),
+    re.compile(r"fatal error", re.IGNORECASE),
+    re.compile(r"ddebdf\s+did\s+not\s+converge", re.IGNORECASE),
 ]
 
 # 无效 INP 卡片检测模式
@@ -169,13 +177,23 @@ INVALID_CARD_PATTERNS = [
     re.compile(r"unknown keyword", re.IGNORECASE),
 ]
 
-# 材料缺失检测模式（来自 CalculiX 源码）
+# 材料缺失检测模式（来自 CalculiX 源码 528 模式）
 MATERIAL_PATTERNS = [
     re.compile(r"no elastic constants", re.IGNORECASE),
     re.compile(r"no density was assigned", re.IGNORECASE),
     re.compile(r"no material was assigned", re.IGNORECASE),
     re.compile(r"no specific heat", re.IGNORECASE),
     re.compile(r"no conductivity", re.IGNORECASE),
+    re.compile(r"no magnetic constants", re.IGNORECASE),
+    re.compile(r"no anisotropic material", re.IGNORECASE),
+    re.compile(r"no orthotropic material", re.IGNORECASE),
+    re.compile(r"no second order", re.IGNORECASE),
+    re.compile(r"no thermal", re.IGNORECASE),
+    re.compile(r"no body forces", re.IGNORECASE),
+    re.compile(r"no buckling", re.IGNORECASE),
+    re.compile(r"no coriolis", re.IGNORECASE),
+    re.compile(r"no offset", re.IGNORECASE),
+    re.compile(r"no orientation", re.IGNORECASE),
 ]
 
 # 参数不识别检测模式
@@ -183,12 +201,19 @@ PARAMETER_PATTERNS = [
     re.compile(r"parameter not recognized", re.IGNORECASE),
 ]
 
-# MPC/约束数量超限检测模式
+# MPC/约束数量超限检测模式（来自 CalculiX 源码）
 MPC_LIMIT_PATTERNS = [
     re.compile(r"increase nmpc_", re.IGNORECASE),
     re.compile(r"increase nboun_", re.IGNORECASE),
     re.compile(r"increase nk_", re.IGNORECASE),
     re.compile(r"increase memmpc_", re.IGNORECASE),
+    re.compile(r"increase nbody_", re.IGNORECASE),
+    re.compile(r"increase nforc_", re.IGNORECASE),
+    re.compile(r"increase nload_", re.IGNORECASE),
+    re.compile(r"increase norien_", re.IGNORECASE),
+    re.compile(r"increase namtot_", re.IGNORECASE),
+    re.compile(r"increase nprint_", re.IGNORECASE),
+    re.compile(r"increase the dimension", re.IGNORECASE),
 ]
 
 # 载荷传递问题检测模式
@@ -214,13 +239,49 @@ MESH_QUALITY_PATTERNS = [
     re.compile(r"aspect ratio", re.IGNORECASE),
 ]
 
-# 接触问题检测模式
+# 接触问题检测模式（增强自 calculix_patterns.txt）
 CONTACT_PATTERNS = [
     re.compile(r"contact.*not.*found", re.IGNORECASE),
     re.compile(r"overclosure", re.IGNORECASE),
     re.compile(r"contact.*stress.*negative", re.IGNORECASE),
     re.compile(r"master.*slave", re.IGNORECASE),
     re.compile(r"contact.*open", re.IGNORECASE),
+    re.compile(r"slave surface", re.IGNORECASE),
+    re.compile(r"master surface", re.IGNORECASE),
+    re.compile(r"slave node", re.IGNORECASE),
+    re.compile(r"contact slave set", re.IGNORECASE),
+    re.compile(r"no tied MPC", re.IGNORECASE),
+    re.compile(r"tied MPC", re.IGNORECASE),
+    re.compile(r"contact.*adjust", re.IGNORECASE),
+]
+
+# 文件 I/O 错误检测模式（来自 CalculiX 源码）
+FILE_IO_PATTERNS = [
+    re.compile(r"could not open file", re.IGNORECASE),
+    re.compile(r"file name is lacking", re.IGNORECASE),
+    re.compile(r"file name too long", re.IGNORECASE),
+    re.compile(r"input file name is too long", re.IGNORECASE),
+    re.compile(r"could not open", re.IGNORECASE),
+    re.compile(r"could not delete file", re.IGNORECASE),
+    re.compile(r"syntax error", re.IGNORECASE),
+]
+
+# 用户单元/材料错误检测模式（来自 CalculiX 源码）
+USER_ELEMENT_PATTERNS = [
+    re.compile(r"user element", re.IGNORECASE),
+    re.compile(r"umat", re.IGNORECASE),
+    re.compile(r"no user material subroutine", re.IGNORECASE),
+    re.compile(r"user subroutine", re.IGNORECASE),
+]
+
+# 动力学/模态分析错误模式（来自 CalculiX 源码）
+DYNAMICS_PATTERNS = [
+    re.compile(r"eigenvalue", re.IGNORECASE),
+    re.compile(r"frequencies:.*less than 1 eigenvalue", re.IGNORECASE),
+    re.compile(r"modal dynamic", re.IGNORECASE),
+    re.compile(r"cyclic symmetric", re.IGNORECASE),
+    re.compile(r"alpha is greater", re.IGNORECASE),
+    re.compile(r"alpha is smaller", re.IGNORECASE),
 ]
 
 
@@ -553,10 +614,11 @@ def _check_contact_issues(results_dir: Path) -> list[DiagnosticIssue]:
     """
     检查接触问题：接触定义错误、接触未找到等。
 
-    扫描 .stderr 文件，匹配以下模式：
+    扫描 .stderr 文件，匹配以下模式（增强自 calculix_patterns.txt）：
     - "contact not found"：接触面未找到
     - "overclosure"：过盈量过大
     - "contact stress negative"：接触应力为负
+    - "slave/master surface"：主从面问题
     """
     issues: list[DiagnosticIssue] = []
 
@@ -583,12 +645,242 @@ def _check_contact_issues(results_dir: Path) -> list[DiagnosticIssue]:
                     elif "contact stress" in matched_text and "negative" in matched_text:
                         msg = "接触应力为负，可能存在穿透问题"
                         suggestion = "检查接触刚度设置和初始间隙"
+                    elif "slave surface" in matched_text or "master surface" in matched_text:
+                        msg = "接触主从面定义存在问题"
+                        suggestion = "检查 *CONTACT PAIR 中 SLAVE 和 MASTER 面的设置是否正确"
+                    elif "slave node" in matched_text:
+                        msg = "接触从节点定义存在问题"
+                        suggestion = "检查接触从节点的选取是否正确"
+                    elif "no tied" in matched_text or "tied mpc" in matched_text:
+                        msg = "接触绑定/粘接问题"
+                        suggestion = "检查 *TIE 命令的绑定面设置"
                     else:
                         msg = "接触定义可能存在问题"
                         suggestion = "检查 *CONTACT PAIR 的主从面设置和 *SURFACE INTERACTION 参数"
                     issues.append(DiagnosticIssue(
                         severity="warning",
                         category="contact",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_file_io_errors(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查文件 I/O 错误（来自 CalculiX 源码 528 模式）。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "could not open file"：文件打开失败
+    - "file name is lacking"：文件名缺失
+    - "file name too long"：文件名过长
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in FILE_IO_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "could not open file" in matched_text:
+                        msg = "文件打开失败"
+                        suggestion = "检查 INP 文件路径是否正确，确保文件存在且有读取权限"
+                    elif "could not open" in matched_text:
+                        msg = "文件打开失败"
+                        suggestion = "检查文件名和路径是否正确"
+                    elif "file name is lacking" in matched_text:
+                        msg = "文件名缺失"
+                        suggestion = "检查 INP 文件中是否缺少输入文件名称"
+                    elif "file name too long" in matched_text or "input file name is too long" in matched_text:
+                        msg = "文件名过长"
+                        suggestion = "缩短输入文件的路径或文件名，CalculiX 对文件名长度有限制"
+                    elif "could not delete" in matched_text:
+                        msg = "文件删除失败"
+                        suggestion = "检查文件是否被其他程序占用，或是否有写入权限"
+                    elif "syntax error" in matched_text:
+                        msg = "输入文件语法错误"
+                        suggestion = "检查 INP 文件格式是否正确，确保卡片语法符合 CalculiX 规范"
+                    else:
+                        msg = "文件 I/O 错误"
+                        suggestion = "检查输入输出文件路径和权限"
+                    issues.append(DiagnosticIssue(
+                        severity="error",
+                        category="file_io",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_user_element_errors(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查用户单元/材料错误（来自 CalculiX 源码）。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "user element"：用户单元问题
+    - "umat"：用户材料子程序问题
+    - "user subroutine"：用户子程序问题
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in USER_ELEMENT_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "no user material" in matched_text or "umat" in matched_text and "no" in matched_text:
+                        msg = "用户材料子程序（UMAT）未找到"
+                        suggestion = "确保 *USER MATERIAL 子程序已正确编译并链接，或使用标准材料模型"
+                    elif "user element" in matched_text:
+                        msg = "用户单元（UELS）存在问题"
+                        suggestion = "检查用户单元子程序是否正确实现和链接"
+                    elif "umat" in matched_text:
+                        msg = "用户材料子程序（UMAT）存在问题"
+                        suggestion = "检查 UMAT 子程序的输入参数和材料参数是否正确"
+                    else:
+                        msg = "用户子程序存在问题"
+                        suggestion = "检查用户自定义子程序是否正确编译和链接"
+                    issues.append(DiagnosticIssue(
+                        severity="error",
+                        category="user_element",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_mpc_limits(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查 MPC/约束数量超限错误（来自 CalculiX 源码）。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "increase nmpc_"：MPC 数量超限
+    - "increase nboun_"：边界条件数量超限
+    - "increase nk_"：节点数量超限
+    - "increase memmpc_"：MPC 内存超限
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in MPC_LIMIT_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "nmpc" in matched_text:
+                        msg = "MPC（多点约束）数量超限"
+                        suggestion = "减少模型中的 MPC 数量，或在 *MPCACABLE 参数中增加限制值"
+                    elif "nboun" in matched_text:
+                        msg = "边界条件数量超限"
+                        suggestion = "简化边界条件定义，减少边界条件数量"
+                    elif "nk" in matched_text:
+                        msg = "节点数量超限"
+                        suggestion = "检查网格节点编号是否合理，确保节点数量在允许范围内"
+                    elif "memmpc" in matched_text:
+                        msg = "MPC 内存分配超限"
+                        suggestion = "减少复杂 MPC 约束，或增加 *MPCABLE 的 MEMMPCC 参数"
+                    elif "nbody" in matched_text:
+                        msg = "体积载荷数量超限"
+                        suggestion = "减少 *DLOAD 定义的体积载荷数量"
+                    elif "nforc" in matched_text:
+                        msg = "集中力数量超限"
+                        suggestion = "减少 *CLOAD 定义的集中力数量"
+                    elif "nload" in matched_text:
+                        msg = "载荷数量超限"
+                        suggestion = "减少载荷定义数量，或合并载荷"
+                    elif "norien" in matched_text:
+                        msg = "方向定义数量超限"
+                        suggestion = "减少 *ORIENTATION 定义数量"
+                    elif "namtot" in matched_text:
+                        msg = "总节点/单元属性数量超限"
+                        suggestion = "简化模型，减少节点集和单元集数量"
+                    elif "nprint" in matched_text:
+                        msg = "输出请求数量超限"
+                        suggestion = "减少 *NODE PRINT 或 *EL PRINT 的输出变量数量"
+                    elif "dimension" in matched_text:
+                        msg = "模型维度或网格尺寸超限"
+                        suggestion = "检查网格尺寸是否合理，减小模型规模"
+                    else:
+                        msg = "内存或数量超限"
+                        suggestion = "简化模型或增加内存限制参数"
+                    issues.append(DiagnosticIssue(
+                        severity="error",
+                        category="limit_exceeded",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_dynamics_errors(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查动力学/模态分析错误（来自 CalculiX 源码）。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "eigenvalue"：特征值问题
+    - "frequencies"：频率提取问题
+    - "cyclic symmetric"：循环对称问题
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in DYNAMICS_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "eigenvalue" in matched_text:
+                        msg = "特征值求解失败"
+                        suggestion = "检查模态分析参数，确保结构有足够的约束"
+                    elif "less than 1 eigenvalue" in matched_text:
+                        msg = "特征值数量不足"
+                        suggestion = "检查是否所有频率都为零（刚体模态），确保边界条件正确"
+                    elif "cyclic symmetric" in matched_text:
+                        msg = "循环对称分析存在问题"
+                        suggestion = "检查循环对称边界条件是否正确设置"
+                    elif "alpha is greater" in matched_text or "alpha is smaller" in matched_text:
+                        msg = "动力学时间积分参数 alpha 不合理"
+                        suggestion = "检查 *DYNAMIC 步骤的 alpha 参数（推荐值：-0.05 到 -0.3）"
+                    else:
+                        msg = "动力学/模态分析存在问题"
+                        suggestion = "检查动力学分析参数设置"
+                    issues.append(DiagnosticIssue(
+                        severity="warning",
+                        category="dynamics",
                         message=msg,
                         location=stderr_file.name,
                         suggestion=suggestion,
