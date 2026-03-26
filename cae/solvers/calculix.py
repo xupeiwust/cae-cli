@@ -34,20 +34,53 @@ _CCX_NAMES = ["ccx", "ccx_2.21", "ccx_2.20", "ccx_2.19", "ccx_2.18", "CalculiX"]
 
 def _get_project_ccx_path() -> Optional[Path]:
     """获取项目内置的 ccx.exe 路径（相对于当前文件位置）"""
-    # 项目目录结构: cae/solvers/calculix.py -> 项目根目录 / cxx.exe
+    # 项目目录结构: cae/solvers/calculix.py -> 项目根目录
     project_root = Path(__file__).parent.parent.parent
-    ccx_path = project_root / "cxx.exe" / "ccx.exe"
-    if ccx_path.is_file():
-        return ccx_path.resolve()
+
+    # 可能的求解器位置
+    # 优先使用独立版本（CalculiX-Portable），因为它无需额外 DLL
+    # 需要同时检查项目目录和兄弟目录（CalculiX-Portable 可能与 cae-cli 并列）
+    candidates = [
+        # 兄弟目录的 CalculiX-Portable（独立版本，优先级最高）
+        project_root.parent / "CalculiX-Portable" / "bin" / "ccx.exe",
+        project_root.parent / "CalculiX-Portable" / "bin" / "ccx_i8.exe",
+        # 项目内的 CalculiX-Portable（独立版本）
+        project_root / "CalculiX-Portable" / "bin" / "ccx.exe",
+        project_root / "CalculiX-Portable" / "bin" / "ccx_i8.exe",
+        # 独立版本优先级更高，即使其他版本先被检测到也跳过
+    ]
+
+    # 先找 CalculiX-Portable（独立版本）
+    for ccx_path in candidates[:4]:
+        if ccx_path.is_file():
+            return ccx_path.resolve()
+
+    # 如果没有独立版本，再找需要 DLL 的版本
+    fallback = [
+        project_root / "cxx.exe" / "ccx.exe",  # 项目内
+    ]
+    for ccx_path in fallback:
+        if ccx_path.is_file():
+            return ccx_path.resolve()
+
     return None
 
 
 def _get_project_dll_dir() -> Optional[Path]:
     """获取项目内置的 DLL 目录路径"""
     project_root = Path(__file__).parent.parent.parent
-    dll_dir = project_root / "cxx.exe" / "dlls"
-    if dll_dir.is_dir():
-        return dll_dir.resolve()
+
+    # 可能的 DLL 目录位置
+    # 注意：CalculiX-Portable/bin 中的 ccx.exe 是独立的，不需要额外 DLL
+    dll_dirs = [
+        project_root / "CalculiX-Portable" / "bin",  # 项目内（独立版本）
+        project_root / "cxx.exe" / "dlls",  # 项目内（需要 DLL 的版本）
+        project_root.parent / "CalculiX-Portable" / "bin",  # 兄弟目录（独立版本）
+    ]
+
+    for dll_dir in dll_dirs:
+        if dll_dir.is_dir():
+            return dll_dir.resolve()
     return None
 
 
@@ -80,6 +113,17 @@ class CalculixSolver(BaseSolver):
                 ccx_path = user_path / ccx_name
                 if ccx_path.is_file():
                     return ccx_path.resolve()
+
+        # 0.5. 工作目录下的求解器（workspace/solvers/ccx）
+        ws_solver = settings.workspace_solver_path
+        if ws_solver:
+            for ccx_name in ["ccx.exe", "ccx"]:
+                ccx_path = ws_solver / ccx_name
+                if ccx_path.is_file():
+                    return ccx_path.resolve()
+            # 也检查 workspace/solvers/ccx.exe 直接
+            if ws_solver.is_file():
+                return ws_solver.resolve()
 
         # 1. cae install 安装的捆绑二进制（~/.cae-cli/solvers/calculix/bin/）
         for candidate in [
@@ -141,14 +185,28 @@ class CalculixSolver(BaseSolver):
         if not binary:
             return None
         try:
-            # ccx 无参数运行时会打印版本到 stderr 然后以非零退出
+            # 尝试 ccx -v 获取版本信息
             proc = subprocess.run(
-                [str(binary)],
+                [str(binary), "-v"],
                 capture_output=True,
                 text=True,
                 timeout=5,
             )
             output = proc.stdout + proc.stderr
+            for line in output.splitlines():
+                low = line.lower()
+                # 匹配 "This is Version X.XX" 或 "CalculiX Version X.XX"
+                if "version" in low and "." in line:
+                    return line.strip()
+            # 如果 -v 不行，尝试无参数运行
+            if not output.strip():
+                proc = subprocess.run(
+                    [str(binary)],
+                    capture_output=True,
+                    text=True,
+                    timeout=5,
+                )
+                output = proc.stdout + proc.stderr
             for line in output.splitlines():
                 low = line.lower()
                 if "calculix" in low and (

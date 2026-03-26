@@ -69,10 +69,13 @@ class SolverInstaller:
         self._default_bin_dir = self._default_solvers_dir / "bin"
 
         # 项目内置求解器目录（用于分发）
+        # 需要同时检查项目目录和兄弟目录（CalculiX-Portable 可能与 cae-cli 并列）
+        project_root = Path(__file__).parent.parent.parent
         self._builtin_dirs = [
-            Path(__file__).parent.parent.parent / "cxx.exe",  # cae-cli/cxx.exe/
-            Path(__file__).parent.parent.parent / "release" / "ccx",  # cae-cli/release/ccx/
-            Path(__file__).parent.parent.parent / "CalculiX-Portable" / "bin",  # CalculiX-Portable/bin/
+            project_root / "cxx.exe",  # cae-cli/cxx.exe/
+            project_root / "release" / "ccx",  # cae-cli/release/ccx/
+            project_root / "CalculiX-Portable" / "bin",  # cae-cli/CalculiX-Portable/bin/
+            project_root.parent / "CalculiX-Portable" / "bin",  # 兄弟目录/CalculiX-Portable/bin/
         ]
 
     @property
