@@ -22,17 +22,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Iterable
 
-from cae.enums import ElementType
-
-
-# =============================================================================
-# Surface 类型枚举
-# =============================================================================
-
-class SurfaceType(str):
-    """Surface 类型。"""
-    NODE = "NODE"       # 基于节点
-    ELEMENT = "ELEMENT"  # 基于单元面
+from cae.enums import ElementType, SurfaceType
 
 
 # =============================================================================
