@@ -89,6 +89,18 @@ def fix_inp(
             if fix:
                 fixes_applied.append(fix)
 
+        # ===== 载荷传递问题 =====
+        elif "rhs only consists of 0.0" in message or "载荷向量为零" in message:
+            fix = _fix_load_transfer(lines, issue, results_dir)
+            if fix:
+                fixes_applied.append(fix)
+
+        # ===== 边界条件问题 =====
+        elif "zero pivot" in message or "singular matrix" in message or "欠约束" in message:
+            fix = _fix_boundary_issues(lines, issue)
+            if fix:
+                fixes_applied.append(fix)
+
     if not fixes_applied:
         return FixResult(
             success=False,
@@ -189,6 +201,65 @@ def _fix_convergence_issues(lines: list[str], issue) -> Optional[str]:
                 return f"修改 *STATIC 初始步长: {current_val} -> {new_val}"
             except ValueError:
                 pass
+
+    return None
+
+
+def _fix_load_transfer(lines: list[str], issue, results_dir: Optional[Path] = None) -> Optional[str]:
+    """
+    修复：载荷传递问题（RHS only consists of 0.0）
+
+    定位逻辑：
+    1. 检查是否存在 *COUPLING 配合 *DISTRIBUTING
+    2. 如果存在，将 *CLOAD 改为 *DLOAD
+
+    注意：这是复杂修改，需要仔细处理。
+    当前实现仅检测问题，不尝试自动修复。
+    """
+    # 检查是否有 DISTRIBUTING 耦合
+    has_distributing = False
+    has_coupling = False
+    coupling_line_idx = -1
+
+    for i, line in enumerate(lines):
+        line_upper = line.strip().upper()
+        if line_upper.startswith("*COUPLING"):
+            has_coupling = True
+            coupling_line_idx = i
+        if line_upper.startswith("*DISTRIBUTING"):
+            has_distributing = True
+
+    # 如果有 DISTRIBUTING 耦合但没有 CLOAD，可能需要提示
+    if has_distributing and has_coupling:
+        return (
+            "检测到 *COUPLING 配合 *DISTRIBUTING 使用，"
+            "载荷应使用 *DLOAD 而非 *CLOAD。"
+            "建议手动修改：将 *CLOAD 替换为相应的 *DLOAD 定义。"
+        )
+
+    return None
+
+
+def _fix_boundary_issues(lines: list[str], issue) -> Optional[str]:
+    """
+    修复：边界条件问题（欠约束/过约束）
+
+    当前实现仅检测问题，给出建议。
+    实际修复需要用户确认边界条件是否正确。
+    """
+    message = issue.message.lower() if hasattr(issue, 'message') and issue.message else ""
+
+    if "zero pivot" in message:
+        return (
+            "零主元错误：检查边界条件是否完整。"
+            "确保结构被完全约束（所有位移分量），"
+            "壳/梁结构需要面外约束。"
+        )
+    elif "singular matrix" in message:
+        return (
+            "矩阵奇异错误：检查是否存在冲突的边界条件，"
+            "或某些自由度未被约束。"
+        )
 
     return None
 

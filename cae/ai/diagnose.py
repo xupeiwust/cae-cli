@@ -114,6 +114,8 @@ def diagnose_results(
         result.level1_issues.extend(_check_material_yield(results_dir, inp_file))
         result.level1_issues.extend(_check_unit_consistency(results_dir, inp_file))
         result.level1_issues.extend(_check_load_transfer(results_dir))
+        result.level1_issues.extend(_check_boundary_issues(results_dir))
+        result.level1_issues.extend(_check_contact_issues(results_dir))
 
         # ========== Level 2: 参考案例对比（无条件执行）==========
         ref_result = _check_reference_cases(results_dir, inp_file)
@@ -193,6 +195,32 @@ MPC_LIMIT_PATTERNS = [
 LOAD_TRANSFER_PATTERNS = [
     re.compile(r"RHS only consists of 0\.0", re.IGNORECASE),
     re.compile(r"concentrated loads:\s*0\s*$", re.IGNORECASE | re.MULTILINE),
+]
+
+# 边界条件问题检测模式
+BOUNDARY_PATTERNS = [
+    re.compile(r"zero pivot", re.IGNORECASE),
+    re.compile(r"singular matrix", re.IGNORECASE),
+    re.compile(r"欠约束|underconstrained", re.IGNORECASE),
+    re.compile(r"过约束|overconstrained", re.IGNORECASE),
+]
+
+# 网格质量问题检测模式
+MESH_QUALITY_PATTERNS = [
+    re.compile(r"negative.*jacobian", re.IGNORECASE),
+    re.compile(r"distorted.*element", re.IGNORECASE),
+    re.compile(r"element.*invert", re.IGNORECASE),
+    re.compile(r"skewness", re.IGNORECASE),
+    re.compile(r"aspect ratio", re.IGNORECASE),
+]
+
+# 接触问题检测模式
+CONTACT_PATTERNS = [
+    re.compile(r"contact.*not.*found", re.IGNORECASE),
+    re.compile(r"overclosure", re.IGNORECASE),
+    re.compile(r"contact.*stress.*negative", re.IGNORECASE),
+    re.compile(r"master.*slave", re.IGNORECASE),
+    re.compile(r"contact.*open", re.IGNORECASE),
 ]
 
 
@@ -456,6 +484,111 @@ def _check_load_transfer(results_dir: Path) -> list[DiagnosticIssue]:
                     issues.append(DiagnosticIssue(
                         severity="error",
                         category="load_transfer",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_boundary_issues(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查边界条件问题：欠约束/过约束导致的刚体运动或奇异性。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "zero pivot"：零主元，通常是边界条件不完整
+    - "singular matrix"：矩阵奇异，欠约束或过约束
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in BOUNDARY_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "zero pivot" in matched_text:
+                        msg = "检测到零主元（zero pivot），可能是边界条件不完整"
+                        suggestion = (
+                            "检查以下可能原因：\n"
+                            "1) 结构是否被完全约束（尤其旋转自由度）\n"
+                            "2) 壳单元是否有足够的边界约束\n"
+                            "3) 接触面是否正确定义\n"
+                            "4) 节点编号是否连续"
+                        )
+                    elif "singular matrix" in matched_text:
+                        msg = "矩阵奇异，结构存在欠约束或过约束"
+                        suggestion = (
+                            "检查边界条件：\n"
+                            "1) 确保所有位移分量都被约束\n"
+                            "2) 检查是否存在冲突的边界条件\n"
+                            "3) 壳/梁结构需要面外约束"
+                        )
+                    else:
+                        msg = "边界条件可能存在问题"
+                        suggestion = "检查边界条件是否完整且无冲突"
+                    issues.append(DiagnosticIssue(
+                        severity="error",
+                        category="boundary_condition",
+                        message=msg,
+                        location=stderr_file.name,
+                        suggestion=suggestion,
+                    ))
+                    break
+
+        except OSError:
+            pass
+
+    return issues
+
+
+def _check_contact_issues(results_dir: Path) -> list[DiagnosticIssue]:
+    """
+    检查接触问题：接触定义错误、接触未找到等。
+
+    扫描 .stderr 文件，匹配以下模式：
+    - "contact not found"：接触面未找到
+    - "overclosure"：过盈量过大
+    - "contact stress negative"：接触应力为负
+    """
+    issues: list[DiagnosticIssue] = []
+
+    for stderr_file in results_dir.glob("*.stderr"):
+        try:
+            text = stderr_file.read_text(encoding="utf-8", errors="replace")
+
+            for pattern in CONTACT_PATTERNS:
+                match = pattern.search(text)
+                if match:
+                    matched_text = match.group(0).lower()
+                    if "contact" in matched_text and "not" in matched_text and "found" in matched_text:
+                        msg = "接触面未找到，接触定义可能错误"
+                        suggestion = (
+                            "检查以下可能原因：\n"
+                            "1) 主从面是否正确设置\n"
+                            "2) 接触面之间是否有初始间隙\n"
+                            "3) 接触面节点是否在同一位置\n"
+                            "4) 接触面法向方向是否正确"
+                        )
+                    elif "overclosure" in matched_text:
+                        msg = "接触过盈量过大"
+                        suggestion = "检查初始几何位置，确保接触面之间没有过大的过盈量"
+                    elif "contact stress" in matched_text and "negative" in matched_text:
+                        msg = "接触应力为负，可能存在穿透问题"
+                        suggestion = "检查接触刚度设置和初始间隙"
+                    else:
+                        msg = "接触定义可能存在问题"
+                        suggestion = "检查 *CONTACT PAIR 的主从面设置和 *SURFACE INTERACTION 参数"
+                    issues.append(DiagnosticIssue(
+                        severity="warning",
+                        category="contact",
                         message=msg,
                         location=stderr_file.name,
                         suggestion=suggestion,
