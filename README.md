@@ -1,8 +1,8 @@
-# cae-cli
+<div align="center">
 
-> **买不起商业软件的机械工程学生和小型实验室** — 用 CalculiX 做仿真，AI 帮你诊断问题
+![](logo.svg)
 
-<p align="center">
+<br/>
 
 [![Python](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://www.python.org/)
 [![PyPI](https://img.shields.io/badge/PyPI-cae--cxx%20v1.5.0-blue.svg)](https://pypi.org/project/cae-cxx/)
@@ -10,9 +10,13 @@
 [![Test](https://img.shields.io/badge/Tests-100%20passed-brightgreen.svg)](#兼容性验证)
 [![CalculiX](https://img.shields.io/badge/CalculiX-2.22+-orange.svg)](https://www.calculix.org/)
 
-</p>
+<br/>
+
+### 💡 买不起商业软件的机械工程学生和小型实验室
 
 **学生 | 工程师 | 独立开发者** — 快速验证想法，AI 辅助分析，本地运行保护数据隐私
+
+</div>
 
 ---
 
