@@ -1637,18 +1637,24 @@ def install(
     solver_install_path = None
     console.print("  [bold]安装 CalculiX 求解器[/bold]")
 
-    # 询问安装路径
-    default_path = str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin")
-    raw_path = typer.prompt(
-        "  安装路径",
-        default=default_path,
-        show_default=True,
-    )
-    install_path = Path(raw_path.strip())
+    # 如果设置了工作目录，默认使用工作目录下的 solvers 目录
+    # 否则使用全局默认路径
+    if settings.workspace_solvers_dir:
+        default_path = str(settings.workspace_solvers_dir)
+        install_path = Path(default_path)
+        console.print(f"  使用工作目录: [cyan]{default_path}[/cyan]")
+    else:
+        default_path = str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin")
+        raw_path = typer.prompt(
+            "  安装路径",
+            default=default_path,
+            show_default=True,
+        )
+        install_path = Path(raw_path.strip())
 
-    # 确保路径格式正确（如果是文件路径则取父目录）
-    if install_path.name == "ccx.exe" or ".exe" in install_path.name:
-        install_path = install_path.parent
+        # 确保路径格式正确（如果是文件路径则取父目录）
+        if install_path.name == "ccx.exe" or ".exe" in install_path.name:
+            install_path = install_path.parent
 
     installer = SolverInstaller(install_dir=install_path)
 
@@ -1694,7 +1700,6 @@ def install(
         console.print()
 
     console.print("  现在可以运行 [bold]`cae solve`[/bold] 开始仿真\n")
-    console.print("  AI 模型安装: [bold]`cae install ai`[/bold]\n")
 
 
 @app.command(name="install ai")
@@ -1756,43 +1761,53 @@ def install_ai(
 @app.command()
 def diagnose(
     results_dir: Optional[Path] = typer.Argument(None, help="结果目录"),
-    inp_file: Optional[Path] = typer.Option(None, "-i", "--inp", help="INP 文件（用于参考案例匹配）"),
-    no_ai: bool = typer.Option(False, "--no-ai", help="只做规则+案例检测，跳过 AI"),
-    stream: bool = typer.Option(True, "--stream/--no-stream"),
-    explain: bool = typer.Option(True, "--explain/--no-explain", help="包含 AI 结果解读"),
-    suggest: bool = typer.Option(True, "--suggest/--no-suggest", help="包含 AI 优化建议"),
+    inp_file: Optional[Path] = typer.Option(None, "-i", "--inp", help="INP 文件（用于规则检测和参考案例匹配）"),
+    ai: bool = typer.Option(False, "--ai", help="启用 AI 深度诊断（需要 Ollama）"),
 ) -> None:
     """
-    [bold]AI 诊断仿真问题[/bold]
+    [bold]诊断仿真问题[/bold]
 
-    三合一命令，包含：
-    1. 规则检测（Level 1）：527 个源码硬编码模式
-    2. 参考案例对比（Level 2）：638 个官方测试集
-    3. AI 诊断（Level 3）：可选
-    4. AI 结果解读：可选
-    5. AI 优化建议：可选
+    基于规则层检测仿真结果中的常见问题：
+    1. 规则检测（Level 1）：扫描 stderr/结果文件中的 527 个源码硬编码模式
+    2. INP 文件检查：检测被注释的关键卡片、缺少必要关键字等
+    3. 参考案例对比（Level 2）：638 个官方测试集
+
+    使用 [bold]--ai[/bold] 启用 AI 深度诊断。
     """
     from cae.ai.diagnose import diagnose_results
-    from cae.ai.explain import explain_results
-    from cae.ai.suggest import suggest_results
-    from cae.ai.llm_client import LLMClient
 
     console.print()
-    console.print(Panel.fit("[bold cyan]cae diagnose[/bold cyan] — AI 诊断", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]cae diagnose[/bold cyan] — 诊断仿真问题", border_style="cyan"))
     console.print()
 
     if results_dir is None:
         raw = typer.prompt("  请输入结果目录路径")
         results_dir = Path(raw.strip())
 
-    client = None
-    if not no_ai:
-        from cae.ai.llm_client import LLMConfig
-        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
-        client = LLMClient(config=config)
+    # 如果传入的是文件（通常是 INP 文件），自动提取目录和文件路径
+    if results_dir.is_file():
+        inp_file = results_dir
+        results_dir = results_dir.parent
+        console.print(f"  检测到 INP 文件，自动使用其目录作为结果目录: [cyan]{results_dir}[/cyan]")
+    elif inp_file is None and not any(results_dir.glob("*.frd")):
+        # 如果没有指定 INP 文件，且 results_dir 下没有 .frd 文件
+        # 尝试在 results_dir 下找 INP 文件
+        inp_files = list(results_dir.glob("*.inp"))
+        if inp_files:
+            inp_file = inp_files[0]
+            console.print(f"  自动检测到 INP 文件: [cyan]{inp_file}[/cyan]")
 
     # ========== Level 1 + 2: 规则检测 + 参考案例 ==========
-    result = diagnose_results(results_dir, client, inp_file=inp_file, stream=stream)
+    client = None
+    if ai:
+        from cae.ai.llm_client import LLMConfig, LLMClient
+        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        client = LLMClient(config=config)
+        console.print("  [yellow]AI 深度诊断已启用[/yellow]\n")
+    else:
+        console.print("  [dim]使用 --ai 启用 AI 深度诊断[/dim]\n")
+
+    result = diagnose_results(results_dir, client, inp_file=inp_file, stream=False)
 
     if not result.success:
         err_console.print(f"\n  诊断失败: {result.error}\n")
@@ -1800,55 +1815,32 @@ def diagnose(
 
     # 显示规则检测结果
     if result.issues:
-        console.print(f"  规则检测：发现 {result.issue_count} 个问题")
-        for iss in result.issues[:10]:
-            icon = "X" if iss.severity == "error" else "!"
-            console.print(f"  [{icon}] [{iss.category}] {iss.message[:80]}")
+        console.print(f"  [bold red]发现 {result.issue_count} 个问题[/bold red]")
+        for iss in result.issues[:15]:
+            icon = "[red]X[/red]" if iss.severity == "error" else "[yellow]![/yellow]"
+            console.print(f"  {icon} [{iss.category}] {iss.message[:80]}")
             if iss.suggestion:
                 console.print(f"     -> {iss.suggestion}")
         console.print()
     else:
-        console.print("  规则检测未发现明显问题\n")
+        console.print("  [green]✓ 规则检测未发现明显问题[/green]\n")
 
     # 显示相似案例
     if result.similar_cases:
-        console.print(f"  参考案例匹配：找到 {len(result.similar_cases)} 个相似案例")
+        console.print(f"  [bold]参考案例匹配[/bold]：找到 {len(result.similar_cases)} 个相似案例")
         for case in result.similar_cases[:3]:
             console.print(f"  - {case['name']} (相似度 {case['similarity_score']}%)")
             if case.get('expected_disp_max'):
                 console.print(f"    预期位移: {case['expected_disp_max']:.3e}")
         console.print()
 
-    # ========== Level 3: AI 诊断 ==========
-    if result.level3_diagnosis and not stream:
+    # ========== AI 诊断结果 ==========
+    if result.level3_diagnosis:
         console.print(Panel(result.level3_diagnosis, title="AI 诊断", border_style="yellow"))
         console.print()
 
-    # ========== AI 结果解读 ==========
-    if explain and not no_ai:
-        console.print("  [bold]正在进行 AI 结果解读...[/bold]\n")
-        explain_result = explain_results(results_dir, client, stream=stream)
-        if explain_result.success and not stream:
-            console.print(Panel(explain_result.summary, title="AI 解读", border_style="green"))
-            console.print()
-
-    # ========== AI 优化建议 ==========
-    if suggest and not no_ai:
-        console.print("  [bold]正在生成优化建议...[/bold]\n")
-        suggest_result = suggest_results(results_dir, result, client, stream=stream)
-        if suggest_result.success and suggest_result.suggestions:
-            console.print("  [bold]优化建议：[/bold]")
-            for i, sug in enumerate(suggest_result.suggestions[:5], 1):
-                priority_icon = "[red]" if sug.priority <= 2 else "[yellow]" if sug.priority <= 3 else "[green]"
-                console.print(f"\n  {i}. {priority_icon}{sug.title}[/]")
-                console.print(f"     类别: {sug.category}  |  难度: {sug.implementation_difficulty}")
-                console.print(f"     {sug.description}")
-                console.print(f"     预期改进: {sug.expected_improvement}")
-            console.print()
-
     # ========== 自动修复（规则层定位）==========
     if result.issues and inp_file and inp_file.exists():
-        console.print()
         console.print("  [bold yellow]是否自动修复这些问题？[y/N]:[/bold yellow] ", end="")
         user_input = input().strip().lower()
         if user_input == "y":

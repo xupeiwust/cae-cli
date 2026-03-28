@@ -18,6 +18,8 @@ from typing import Optional
 from urllib.request import urlretrieve
 from urllib.error import URLError
 
+from cae.config import settings
+
 # GitHub Release 地址
 REPO_OWNER = "yd5768365-hue"
 REPO_NAME = "cae-cli"
@@ -71,7 +73,7 @@ class SolverInstaller:
         # 项目内置求解器目录（用于分发）
         # 从配置读取，如果未设置则使用默认值
         project_root = Path(__file__).parent.parent.parent
-        builtin_paths_raw = self._data.get("builtin_solver_paths", "")
+        builtin_paths_raw = settings.builtin_solver_paths
         if builtin_paths_raw:
             # 从配置读取的路径列表（逗号分隔）
             self._builtin_dirs = [Path(p.strip()) for p in builtin_paths_raw.split(",") if p.strip()]

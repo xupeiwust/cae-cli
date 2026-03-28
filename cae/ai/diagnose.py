@@ -120,6 +120,7 @@ def diagnose_results(
         result.level1_issues.extend(_check_user_element_errors(results_dir))
         result.level1_issues.extend(_check_mpc_limits(results_dir))
         result.level1_issues.extend(_check_dynamics_errors(results_dir))
+        result.level1_issues.extend(_check_inp_file_quality(inp_file))
 
         # ========== Level 2: 参考案例对比（无条件执行）==========
         ref_result = _check_reference_cases(results_dir, inp_file)
@@ -889,6 +890,148 @@ def _check_dynamics_errors(results_dir: Path) -> list[DiagnosticIssue]:
 
         except OSError:
             pass
+
+    return issues
+
+
+def _check_inp_file_quality(inp_file: Optional[Path]) -> list[DiagnosticIssue]:
+    """
+    直接扫描 INP 文件，检测被注释的关键卡片和常见错误。
+
+    检测以下问题：
+    - 被注释的 *SURFACE BEHAVIOR（接触行为缺失）
+    - 被注释的 *ELASTIC（弹性常数缺失）
+    - 被注释的 *MATERIAL（材料定义缺失）
+    - 缺少 *SOLID SECTION 的材料关联
+    - 缺少 *BOUNDARY 边界条件
+    - 缺少 *STEP 分析步
+    - 载荷施加位置错误（载荷在 *STEP 之前）
+    """
+    issues: list[DiagnosticIssue] = []
+
+    if not inp_file or not inp_file.exists():
+        return issues
+
+    try:
+        lines = inp_file.read_text(encoding="utf-8", errors="replace").splitlines()
+
+        # 收集所有关键字（包含注释行）
+        all_keywords: set[str] = set()
+        active_keywords: set[str] = set()
+        commented_keywords: set[str] = set()
+
+        # 关键字行号（用于定位）
+        keyword_lines: dict[str, list[int]] = {}
+
+        i = 0
+        while i < len(lines):
+            raw_line = lines[i].strip()
+
+            # 跳过空行（块注释行 ** 要继续处理，用于标记被注释的关键字）
+            if not raw_line:
+                i += 1
+                continue
+
+            # 行内注释：取 # 前的部分
+            line = raw_line.split("#")[0].strip()
+
+            # 判断是否是块注释（** 开头）
+            is_block_comment = raw_line.startswith("**")
+
+            # 匹配关键字行（*开头），提取星号后、逗号前的完整关键字
+            # 支持多单词关键字如 SURFACE BEHAVIOR、MATERIAL DEFORMATION 等
+            # 对于块注释行（**），先去除 ** 前缀再匹配
+            match_line = line
+            if is_block_comment:
+                # **KEYWORD 或 ** KEYWORD 形式，统一去除 ** 前缀
+                match_line = re.sub(r"^\*\*\s*", "*", line, count=1)
+
+            keyword_match = re.match(r"^\*([A-Za-z]+(?:[\s][A-Za-z]+)*)", match_line, re.IGNORECASE)
+            if keyword_match:
+                kw = keyword_match.group(1).upper()
+                all_keywords.add(kw)
+                if kw not in keyword_lines:
+                    keyword_lines[kw] = []
+                keyword_lines[kw].append(i + 1)  # 行号从1开始
+
+                # ** 开头是块注释，标记为被注释
+                if is_block_comment:
+                    commented_keywords.add(kw)
+                else:
+                    # 有效关键字（未被注释）
+                    active_keywords.add(kw)
+
+            i += 1
+
+        # ===== 检查1：被注释的关键材料卡片 =====
+        critical_cards = {
+            "ELASTIC": ("材料缺少弹性常数（*ELASTIC）", "在 *MATERIAL 中添加 *ELASTIC,TYPE=ISOTROPIC 定义弹性模量和泊松比"),
+            "SURFACE BEHAVIOR": ("接触行为可能缺失（*SURFACE BEHAVIOR 被注释）", "检查接触面定义，确保 *SURFACE BEHAVIOR 参数正确设置（pressure= 惩罚刚度）"),
+            "DENSITY": ("材料缺少密度定义（*DENSITY 被注释）", "动力学分析需要密度定义，在 *MATERIAL 中添加 *DENSITY"),
+        }
+
+        for kw, (msg, suggestion) in critical_cards.items():
+            if kw in commented_keywords:
+                line_nums = keyword_lines.get(kw, ["?"])
+                issues.append(DiagnosticIssue(
+                    severity="warning",
+                    category="material",
+                    message=msg,
+                    location=f"{inp_file.name} 行 {line_nums[0]}",
+                    suggestion=suggestion,
+                ))
+
+        # ===== 检查2：缺少 *SOLID SECTION（材料未关联到单元） =====
+        if "ELASTIC" in active_keywords and "SOLID SECTION" not in active_keywords:
+            issues.append(DiagnosticIssue(
+                severity="warning",
+                category="material",
+                message="检测到材料定义但缺少 *SOLID SECTION，材料可能未关联到单元",
+                location=inp_file.name,
+                suggestion="在 *SOLID SECTION 中指定 ELNAME=材料名称，确保材料属性关联到单元集",
+            ))
+
+        # ===== 检查3：缺少边界条件 =====
+        if "BOUNDARY" not in active_keywords and "BOUNDARY" not in commented_keywords:
+            issues.append(DiagnosticIssue(
+                severity="error",
+                category="boundary_condition",
+                message="INP 文件中未找到 *BOUNDARY 定义",
+                location=inp_file.name,
+                suggestion="结构必须有边界条件才能求解。添加 *BOUNDARY 约束位移分量（固定端全约束或对称边界）",
+            ))
+
+        # ===== 检查4：缺少分析步 =====
+        if "STEP" not in active_keywords and "STEP" not in commented_keywords:
+            issues.append(DiagnosticIssue(
+                severity="error",
+                category="input_syntax",
+                message="INP 文件中未找到 *STEP 定义",
+                location=inp_file.name,
+                suggestion="必须定义至少一个 *STEP 分析步。添加 *STATIC（静力分析）或 *FREQUENCY（模态分析）等",
+            ))
+
+        # ===== 检查5：载荷在 STEP 之前（常见错误） =====
+        step_line = None
+        load_keywords = {"CLOAD", "DLOAD", "DFLUX", "CFLUX", "BOUNDARY"}
+        for kw, lines_list in keyword_lines.items():
+            if kw in load_keywords and not any(kw in c for c in commented_keywords):
+                if step_line is None:
+                    # 找第一个 *STEP 的位置
+                    step_lines = keyword_lines.get("STEP", [float("inf")])
+                    first_step = step_lines[0] if step_lines else float("inf")
+                    if lines_list[0] < first_step:
+                        issues.append(DiagnosticIssue(
+                            severity="warning",
+                            category="input_syntax",
+                            message=f"{kw} 定义在 *STEP 之前，可能无效",
+                            location=f"{inp_file.name} 行 {lines_list[0]}",
+                            suggestion="载荷和边界条件通常应定义在 *STEP 块内部（或 *STEP 之后）",
+                        ))
+                        break
+
+    except OSError:
+        pass
 
     return issues
 

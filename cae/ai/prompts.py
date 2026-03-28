@@ -171,10 +171,19 @@ def make_diagnose_prompt(
     2. stderr 相关片段：规则层定位到的具体行（直接证据）
     3. 关键物理数据：节点数、位移、应力等（辅助判断）
     """
-    issues_text = "\n".join(
-        f"- [{i['severity']}] {i['category']}: {i['message']}"
-        for i in rule_issues
-    ) if rule_issues else "无明显规则违规。"
+    if rule_issues:
+        issues_text = "\n".join(
+            f"- [{i['severity']}] {i['category']}: {i['message']}"
+            for i in rule_issues
+        )
+        analysis_note = ""
+    else:
+        # issues 为空时不发"无明显规则违规"，改为要求 LLM 基于数据独立分析
+        issues_text = "（规则层未检出问题）"
+        analysis_note = (
+            "\n\n**注意**：规则层未检出问题，但请基于以下物理数据和 stderr 信息独立判断。"
+            "如果数据显示异常，应指出可能的问题，而不是回复\"无问题\"。"
+        )
 
     # 相似案例信息
     cases_text = ""
@@ -207,6 +216,7 @@ def make_diagnose_prompt(
 
 ### 求解器收敛指标
 {stderr_summary}
+{analysis_note}
 
 请基于以上三层信息进行分析：
 1. 规则检测结果告诉你诊断结论
