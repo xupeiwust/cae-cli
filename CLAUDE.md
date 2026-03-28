@@ -16,7 +16,7 @@ pip install -e ".[dev,ai,mesh,report]"
 pytest tests/ -v
 
 # Run a single test file
-pytest tests/诊断规则批量测试.py -v
+pytest tests/test_diagnosis_rules.py -v
 
 # Lint with ruff
 ruff check cae/
@@ -94,4 +94,4 @@ Key files:
 
 ## Testing
 
-Tests are in `tests/` directory with Chinese naming. Run full suite with `pytest tests/ -v`. Test data includes `ccx_2.23.test/` (CalculiX official test suite with 638 .inp files).
+Tests are in `tests/` directory. Run full suite with `pytest tests/ -v`. Test data includes `ccx_2.23.test/` (CalculiX official test suite with 638 .inp files).
