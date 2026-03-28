@@ -570,219 +570,200 @@ app.add_typer(inp_app, name="inp")
 app.add_typer(mesh_app, name="mesh")
 
 # ------------------------------------------------------------------ #
-# cae model - AI 模型管理
+# cae model - Ollama 本地模型管理
 # ------------------------------------------------------------------ #
 
 model_app = typer.Typer(
     name="model",
-    help="[bold]AI 模型管理[/bold] — 下载、安装、查看模型",
+    help="[bold]Ollama 本地模型管理[/bold] — 切换、管理本地 LLM 模型",
     no_args_is_help=True,
 )
 
 
 @model_app.callback()
 def model_callback():
-    """AI 模型管理命令组"""
+    """Ollama 本地模型管理命令组"""
     pass
 
 
-@model_app.command(name="install")
-def model_install(
-    model_name: str = typer.Argument(..., help="模型名称（如 deepseek-r1-7b）"),
-    mirror: Optional[str] = typer.Option(None, "--mirror", "-m", help="下载镜像 URL"),
-) -> None:
-    """
-    [bold]下载并安装 AI 模型[/bold]
-
-    从 Hugging Face 下载 GGUF 模型文件到 ~/.cae-cli/models/
-
-    \b
-    示例：
-      cae model install deepseek-r1-7b
-      cae model install deepseek-r1-7b --mirror https://hf-mirror.com
-    """
-    from cae.installer.model_installer import ModelInstaller
-
-    console.print()
-    console.print(Panel.fit(f"[bold cyan]cae model install[/bold cyan] — 安装 AI 模型", border_style="cyan"))
-    console.print()
-
-    mi = ModelInstaller()
-
-    # 检查是否已安装
-    if mi.is_installed(model_name):
-        console.print(f"  [green]模型已安装:[/green] {model_name}")
-        info = mi._find_model(model_name)
-        if info:
-            console.print(f"  路径: {mi.models_dir / info.filename}")
-        return
-
-    # 显示模型信息
-    info = mi._find_model(model_name)
-    if info:
-        console.print(f"  [bold]模型:[/bold] {info.description}")
-        console.print(f"  [bold]大小:[/bold] ~{info.size_gb} GB")
-        console.print(f"  [bold]来源:[/bold] huggingface.co/{info.repo_id}")
-    else:
-        console.print(f"  [yellow]警告:[/yellow] 未找到模型元数据，将作为自定义模型下载")
-    console.print()
-
-    console.print("  这可能需要几分钟，取决于网络速度...")
-    console.print()
-
-    with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                  TimeElapsedColumn(), console=console) as progress:
-        task = progress.add_task("  下载中...", total=None)
-
-        def _progress(pct: float, msg: str) -> None:
-            progress.update(task, description=f"  {msg}", completed=pct * 100)
-
-        result = mi.install(model_name, progress_callback=_progress, mirror=mirror)
-
-    if result.success:
-        console.print()
-        console.print(f"  [green]安装成功！[/green]")
-        console.print(f"  路径: {result.install_path}")
-
-        # 询问是否激活
-        console.print()
-        activate = console.input("  [bold]设为默认模型？[/bold] [y/N]: ")
-        if activate.lower() == "y":
-            mi.activate(model_name)
-            console.print("  [green]已设为默认模型[/green]")
-    else:
-        console.print()
-        console.print(f"  [red]安装失败: {result.error_message}[/red]")
-        raise typer.Exit(code=1)
+def _run_ollama(args: list[str]) -> tuple[int, str, str]:
+    """运行 ollama 命令并返回 (返回码, stdout, stderr)"""
+    import subprocess
+    try:
+        result = subprocess.run(
+            ["ollama"] + args,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+        )
+        return result.returncode, result.stdout, result.stderr
+    except FileNotFoundError:
+        return 1, "", "ollama 命令未找到，请先安装 Ollama: https://ollama.com"
 
 
 @model_app.command(name="list")
 def model_list() -> None:
     """
-    [bold]列出已知模型[/bold]
+    [bold]列出本地模型[/bold]
 
-    显示所有可用模型及其安装状态
+    显示所有已下载的 Ollama 模型
     """
-    from cae.installer.model_installer import ModelInstaller, KNOWN_MODELS
-
     console.print()
-    console.print(Panel.fit("[bold cyan]可用模型列表[/bold cyan]", border_style="cyan"))
+    console.print(Panel.fit("[bold cyan]本地模型列表[/bold cyan]", border_style="cyan"))
     console.print()
 
-    mi = ModelInstaller()
-    table = Table(
-        "名称", "大小", "描述", "状态",
-        box=box.ROUNDED,
-        header_style="bold cyan",
-    )
+    returncode, stdout, stderr = _run_ollama(["list"])
 
-    for info in KNOWN_MODELS.values():
-        status = "[green]已安装[/green]" if mi.is_installed(info.name) else "[dim]未安装[/dim]"
-        table.add_row(
-            f"[bold]{info.name}[/bold]",
-            f"{info.size_gb:.1f} GB",
-            info.description,
-            status,
-        )
+    if returncode != 0:
+        console.print(f"  [red]错误:[/red] {stderr or 'ollama 未运行'}")
+        console.print()
+        console.print("  请确保已安装并启动 Ollama: https://ollama.com")
+        return
 
-    console.print(table)
-    console.print()
-
-    # 显示已安装的文件
-    installed = mi.list_installed()
-    if installed:
-        console.print(f"  已安装文件 ({len(installed)}):")
-        for f in installed:
-            size_mb = f.stat().st_size / (1024 * 1024)
-            console.print(f"    - {f.name} ({size_mb:.1f} MB)")
+    if stdout.strip():
+        # 格式化输出
+        lines = stdout.strip().split("\n")
+        for i, line in enumerate(lines):
+            if i == 0:
+                # 表头
+                console.print(f"  [bold cyan]{line}[/bold cyan]")
+            else:
+                parts = line.split()
+                if len(parts) >= 3:
+                    name = parts[0]
+                    size = parts[1]
+                    modified = " ".join(parts[2:])
+                    console.print(f"  [green]{name:<40}[/green] [dim]{size:>10}[/dim]  [dim]{modified}[/dim]")
+                else:
+                    console.print(f"  {line}")
     else:
-        console.print("  暂无已安装的模型文件")
+        console.print("  [yellow]暂无已下载的模型[/yellow]")
+
+    console.print()
 
 
-@model_app.command(name="info")
-def model_info(
-    model_name: str = typer.Argument(None, help="模型名称（留空则显示默认模型）"),
+@model_app.command(name="pull")
+def model_pull(
+    model_name: str = typer.Argument(..., help="模型名称（如 deepseek-r1:1.5b, llama3:latest）"),
 ) -> None:
     """
-    [bold]显示模型详细信息[/bold]
+    [bold]拉取模型[/bold]
 
-    查看模型元数据、路径、SHA256 校验码等
+    从 Ollama 仓库下载模型
+
+    \b
+    示例：
+      cae model pull deepseek-r1:1.5b
+      cae model pull llama3:latest
     """
-    from cae.installer.model_installer import ModelInstaller, KNOWN_MODELS
-
-    mi = ModelInstaller()
-
-    # 如果未指定，显示默认模型
-    if not model_name:
-        from cae.config import settings
-        model_name = settings.active_model or "（无）"
-
     console.print()
-    console.print(Panel.fit(f"[bold cyan]模型信息: {model_name}[/bold cyan]", border_style="cyan"))
+    console.print(f"  [bold cyan]正在拉取模型:[/bold cyan] {model_name}")
+    console.print("  这可能需要几分钟，取决于网络速度...")
     console.print()
 
-    # 查找模型信息
-    info = mi._find_model(model_name)
-    model_path = mi.get_install_path(model_name)
-    installed = model_path.exists()
+    returncode, stdout, stderr = _run_ollama(["pull", model_name])
 
-    # 基本信息
-    console.print(f"  [bold]名称:[/bold] {model_name}")
-    console.print(f"  [bold]安装路径:[/bold] {model_path}")
-    console.print(f"  [bold]状态:[/bold] {'[green]已安装[/green]' if installed else '[dim]未安装[/dim]'}")
-
-    if info:
-        console.print(f"  [bold]描述:[/bold] {info.description}")
-        console.print(f"  [bold]大小:[/bold] ~{info.size_gb} GB")
-        console.print(f"  [bold]来源:[/bold] huggingface.co/{info.repo_id}")
-        console.print(f"  [bold]文件名:[/bold] {info.filename}")
-        if info.sha256:
-            console.print(f"  [bold]SHA256:[/bold] {info.sha256[:16]}...")
-
-    # 校验信息
-    if installed:
+    if returncode != 0:
         console.print()
-        console.print("  [bold]文件校验:[/bold]")
-        verify = mi.verify_file(model_path, info.sha256 if info else "")
-        if verify.success:
-            console.print(f"    [green]文件完整[/green]")
+        console.print(f"  [red]拉取失败:[/red] {stderr}")
+        raise typer.Exit(code=1)
+
+    console.print()
+    console.print(f"  [green]模型拉取成功！[/green]")
+
+
+@model_app.command(name="show")
+def model_show(
+    model_name: str = typer.Argument(..., help="模型名称"),
+) -> None:
+    """
+    [bold]显示模型信息[/bold]
+
+    查看模型的详细信息（参数、尺寸等）
+    """
+    console.print()
+    console.print(f"  [bold cyan]模型信息:[/bold cyan] {model_name}")
+    console.print()
+
+    returncode, stdout, stderr = _run_ollama(["show", model_name])
+
+    if returncode != 0:
+        console.print(f"  [red]错误:[/red] {stderr}")
+        raise typer.Exit(code=1)
+
+    # 格式化输出
+    for line in stdout.strip().split("\n"):
+        if ":" in line:
+            key, value = line.split(":", 1)
+            console.print(f"  [bold]{key}:[/bold] [dim]{value.strip()}[/dim]")
         else:
-            console.print(f"    [yellow]未校验或校验失败[/yellow]")
-        size_mb = model_path.stat().st_size / (1024 * 1024)
-        console.print(f"    文件大小: {size_mb:.1f} MB")
+            console.print(f"  {line}")
+
+    console.print()
 
 
-@model_app.command(name="uninstall")
-def model_uninstall(
+@model_app.command(name="delete")
+def model_delete(
     model_name: str = typer.Argument(..., help="模型名称"),
     force: bool = typer.Option(False, "--force", "-f", help="跳过确认"),
 ) -> None:
     """
-    [bold]卸载 AI 模型[/bold]
+    [bold]删除模型[/bold]
 
-    删除模型文件（默认需要确认）
+    从本地删除指定的 Ollama 模型
     """
-    mi = ModelInstaller()
-    model_path = mi.get_install_path(model_name)
-
-    if not model_path.exists():
-        console.print(f"  [yellow]模型未安装: {model_name}[/yellow]")
-        return
-
     # 确认
     if not force:
         console.print()
-        confirm = console.input(f"  [bold]确认删除 {model_path.name}？[/bold] [y/N]: ")
+        confirm = console.input(f"  [bold]确认删除模型 {model_name}？[/bold] [y/N]: ")
         if confirm.lower() != "y":
             console.print("  已取消")
             return
 
-    try:
-        model_path.unlink()
-        console.print(f"  [green]已删除: {model_path.name}[/green]")
-    except Exception as e:
-        console.print(f"  [red]删除失败: {e}[/red]")
+    returncode, stdout, stderr = _run_ollama(["rm", model_name])
+
+    if returncode != 0:
+        console.print()
+        console.print(f"  [red]删除失败:[/red] {stderr}")
         raise typer.Exit(code=1)
+
+    console.print()
+    console.print(f"  [green]模型已删除: {model_name}[/green]")
+
+
+@model_app.command(name="set")
+def model_set(
+    model_name: str = typer.Argument(..., help="模型名称（如 deepseek-r1:1.5b）"),
+) -> None:
+    """
+    [bold]设为默认模型[/bold]
+
+    将指定模型设为 cae-cli 的默认使用模型
+
+    \b
+    示例：
+      cae model set deepseek-r1:1.5b
+    """
+    from cae.config import settings
+
+    # 检查模型是否存在
+    returncode, stdout, stderr = _run_ollama(["list"])
+    if returncode == 0:
+        models = [line.split()[0] for line in stdout.strip().split("\n")[1:] if line.strip()]
+        if model_name not in models:
+            console.print()
+            console.print(f"  [yellow]警告:[/yellow] 模型 '{model_name}' 未在本地找到")
+            console.print("  请先使用 [cyan]cae model pull[/cyan] 下载")
+            console.print()
+
+    # 保存到配置
+    settings.active_model = model_name
+    settings.save()
+
+    console.print()
+    console.print(f"  [green]默认模型已设为:[/green] {model_name}")
+    console.print()
+    console.print(f"  配置路径: {settings.config_file}")
 
 
 app.add_typer(model_app, name="model")
@@ -1184,59 +1165,6 @@ def list_solvers_cmd() -> None:
 
 
 # ------------------------------------------------------------------ #
-# cae test
-# ------------------------------------------------------------------ #
-
-@app.command(name="test")
-def test_official(
-    test_dir: Optional[Path] = typer.Option(
-        None, "--test-dir",
-        help="测试文件目录（默认: ccx_2.23.test/CalculiX/ccx_2.23/test）",
-    ),
-    sample: int = typer.Option(
-        10, "--sample",
-        help="Phase 2/3 采样测试的文件数量",
-    ),
-    quiet: bool = typer.Option(False, "--quiet", help="静默模式"),
-) -> None:
-    """
-    [bold]运行 CalculiX 官方测试集批量测试[/bold]
-
-    使用 ccx_2.23.test 测试集验证 INP 解析、求解和格式转换功能。
-
-    示例：
-      cae test
-      cae test --sample 20
-      cae test --test-dir /path/to/test/files
-    """
-    from cae.test.official import run_official_tests
-
-    try:
-        result = run_official_tests(
-            test_dir=test_dir,
-            sample_size=sample,
-            verbose=not quiet,
-        )
-        console.print()
-        console.print(Panel.fit(
-            f"[bold]测试完成[/bold]\n"
-            f"Phase 1 (inp info): {result.phase1.ok}/{result.phase1.total} OK\n"
-            f"Phase 2 (solve):    {result.phase2.ok}/{result.phase2.total} OK\n"
-            f"Phase 3 (convert):  {result.phase3.ok}/{result.phase3.total} OK",
-            border_style="green" if result.total_pass else "yellow",
-        ))
-
-        if not result.total_pass:
-            raise typer.Exit(code=1)
-    except FileNotFoundError as e:
-        console.print(f"[red]错误: {e}[/red]")
-        raise typer.Exit(code=2)
-    except Exception as e:
-        console.print(f"[red]错误: {e}[/red]")
-        raise typer.Exit(code=2)
-
-
-# ------------------------------------------------------------------ #
 # cae info
 # ------------------------------------------------------------------ #
 
@@ -1267,243 +1195,34 @@ def info() -> None:
 
 
 # ------------------------------------------------------------------ #
-# 占位命令（后续周次实现）
+# ------------------------------------------------------------------ #
+# cae run - 全流程一键运行（网格 → 求解 → 可视化）
 # ------------------------------------------------------------------ #
 
-@app.command()
+@app.command(name="run")
 def run(
-    model_file: Optional[Path] = typer.Argument(
-        None,
-        help="模型文件路径（.step/.brep/.iges → 自动划网格；.inp → 直接求解）",
-        show_default=False,
-    ),
-    output: Optional[Path] = typer.Option(
-        None, "--output", "-o",
-        help="结果输出目录（默认 results/<name>/）",
-    ),
-    quality: str = typer.Option(
-        "medium", "--quality", "-q",
-        help="网格精度 [coarse/medium/fine]",
-    ),
-    solver_name: str = typer.Option(
-        None, "--solver", "-s",
-        help="求解器名称",
-    ),
-    timeout: int = typer.Option(3600, "--timeout", help="求解超时秒数"),
-    no_view: bool = typer.Option(False, "--no-view", help="完成后不启动可视化"),
+    model_file: Optional[Path] = typer.Argument(None, help="模型文件路径"),
 ) -> None:
     """
     [bold]全流程一键运行[/bold] — 网格 → 求解 → 可视化
 
-    \b
-    .step / .brep / .iges 文件：自动划网格 + 求解 + 查看结果
-    .inp 文件：跳过划网格，直接求解 + 查看结果
+    暂未实现，敬请期待。
 
+    \b
     示例：
       cae run bracket.step
-      cae run bracket.inp --quality fine
-      cae run               （纯交互模式）
     """
-    from cae.mesh.gmsh_runner import (
-        MeshQuality, mesh_geometry, check_gmsh, SUPPORTED_GEO_FORMATS,
-    )
-    from cae.solvers.registry import get_solver
-    from cae.viewer.vtk_export import frd_to_vtu
-
     console.print()
     console.print(Panel.fit(
-        "[bold cyan]cae run[/bold cyan] — 全流程仿真",
-        border_style="cyan",
+        "[bold yellow]cae run[/bold yellow] — 全流程仿真",
+        border_style="yellow",
     ))
     console.print()
-
-    # ---- 获取输入文件 ----
-    if model_file is None:
-        raw = typer.prompt("  请输入模型文件路径")
-        model_file = Path(raw.strip())
-
-    if not model_file.exists():
-        err_console.print(f"\n  文件不存在: {model_file}\n")
-        raise typer.Exit(1)
-
-    # ---- 判断是否需要划网格 ----
-    ext = model_file.suffix.lower()
-    needs_mesh = ext in SUPPORTED_GEO_FORMATS and ext != ".inp"
-    is_inp = ext == ".inp"
-
-    if not needs_mesh and not is_inp:
-        err_console.print(
-            f"\n  不支持的格式 '{ext}'\n"
-            f"  几何格式: {', '.join(SUPPORTED_GEO_FORMATS.keys())}\n"
-            f"  网格格式: .inp\n"
-        )
-        raise typer.Exit(1)
-
-    # ---- 输出目录 ----
-    if output is None:
-        default_out = settings.default_output_dir / model_file.stem
-        raw_out = typer.prompt("  输出目录", default=str(default_out))
-        output = Path(raw_out.strip()).resolve()
-
-    output.mkdir(parents=True, exist_ok=True)
-
-    # ---- 求解器 ----
-    solver_name = solver_name or settings.default_solver
-    try:
-        solver_instance = get_solver(solver_name)
-    except ValueError as exc:
-        err_console.print(f"\n  {exc}\n")
-        raise typer.Exit(1)
-
-    if not solver_instance.check_installation():
-        err_console.print(
-            f"\n  求解器 '{solver_name}' 未安装\n"
-            "  请运行: [bold]cae install[/bold]\n"
-        )
-        raise typer.Exit(1)
-
-    total_steps = 3 if needs_mesh else 2
-    step_n = 0
-
-    def step(label: str) -> None:
-        nonlocal step_n
-        step_n += 1
-        console.print(f"  [{step_n}/{total_steps}] {label}")
-
-    inp_file: Optional[Path] = None
-
-    # ================================================================
-    # 阶段 1：划网格（仅几何文件）
-    # ================================================================
-    if needs_mesh:
-        if not check_gmsh():
-            err_console.print(
-                "\n  未找到 gmsh，无法自动划网格\n"
-                "  请运行: [bold]pip install gmsh[/bold]\n"
-                "  或者先在 CAD 软件中导出 .inp 文件，再用 cae solve\n"
-            )
-            raise typer.Exit(1)
-
-        try:
-            q = MeshQuality(quality.strip().lower())
-        except ValueError:
-            q = MeshQuality.MEDIUM
-
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task(
-                f"  [{1}/{total_steps}] 划分网格...",
-                total=None,
-            )
-            mesh_result = mesh_geometry(
-                model_file.resolve(),
-                output,
-                quality=q,
-                output_format=".inp",
-            )
-            progress.update(task, completed=True)
-
-        if not mesh_result.success:
-            console.print(f"  网格划分失败: {mesh_result.error}\n")
-            raise typer.Exit(1)
-
-        console.print(
-            f"  网格完成  "
-            f"节点: {mesh_result.node_count}  "
-            f"单元: {mesh_result.element_count}  "
-            f"耗时: {mesh_result.duration_str}"
-        )
-        inp_file = mesh_result.inp_file
-        step_n = 1
-
-    else:
-        inp_file = model_file.resolve()
-
-    # ================================================================
-    # 阶段 2：求解
-    # ================================================================
-    with Progress(
-        SpinnerColumn(),
-        TextColumn("[progress.description]{task.description}"),
-        TimeElapsedColumn(),
-        console=console,
-    ) as progress:
-        task = progress.add_task(
-            f"  [{step_n+1}/{total_steps}] 求解中...",
-            total=None,
-        )
-        solve_result = solver_instance.solve(inp_file, output, timeout=timeout)
-        progress.update(task, completed=True)
-
-    if not solve_result.success:
-        console.print(f"  求解失败: {solve_result.error_message}\n")
-        raise typer.Exit(1)
-
-    console.print(
-        f"  求解完成  耗时: {solve_result.duration_str}"
-    )
-    step_n += 1
-
-    # ================================================================
-    # 阶段 3：生成可视化
-    # ================================================================
-    vtu_file: Optional[Path] = None
-    if solve_result.frd_file:
-        with Progress(
-            SpinnerColumn(),
-            TextColumn("[progress.description]{task.description}"),
-            TimeElapsedColumn(),
-            console=console,
-        ) as progress:
-            task = progress.add_task(
-                f"  [{step_n+1}/{total_steps}] 生成可视化...",
-                total=None,
-            )
-            vtk_result = frd_to_vtu(solve_result.frd_file, output)
-            progress.update(task, completed=True)
-
-        if vtk_result.success:
-            console.print(f"  可视化文件生成完成")
-            vtu_file = vtk_result.vtu_file
-        else:
-            console.print(f"  VTK 转换失败: {vtk_result.error}")
-
-    # ================================================================
-    # 完成摘要
-    # ================================================================
-    console.print()
-    console.print(Panel(
-        f"[bold green]全流程完成！[/bold green]",
-        border_style="green",
-        expand=False,
-    ))
-    console.print()
-
-    if vtu_file and not no_view:
-        console.print(f"  查看结果: [bold]`cae view {output}`[/bold]")
-    if solve_result.warnings:
-        console.print(f"  警告: {len(solve_result.warnings)} 条 — 运行 `cae diagnose` 查看")
-    console.print(f"\n  输入 [bold]`cae explain {output}`[/bold] 让 AI 解读结果\n")
-
-    # 自动启动浏览器
-    if not no_view and vtu_file:
-        _launch_viewer = typer.confirm("  现在打开结果查看器？", default=True)
-        if _launch_viewer:
-            from cae.viewer.server import start_server
-            try:
-                server, url, files = start_server(output, open_browser=True, auto_convert=False)
-                console.print(f"\n  可视化: [bold cyan]{url}[/bold cyan]  (Ctrl+C 退出)\n")
-                try:
-                    server.serve_forever()
-                except KeyboardInterrupt:
-                    server.shutdown()
-                    console.print("\n  服务已停止\n")
-            except Exception as exc:
-                console.print(f"  无法启动查看器: {exc}\n")
+    console.print("  [yellow]此功能暂未实现，敬请期待！[/yellow]\n")
+    console.print("  目前可以分步执行：")
+    console.print("    [cyan]cae mesh gen[/cyan]  — 网格划分")
+    console.print("    [cyan]cae solve[/cyan]    — 执行求解")
+    console.print("    [cyan]cae view[/cyan]     — 查看结果\n")
 
 
 @mesh_app.command(name="gen")
@@ -2032,77 +1751,6 @@ def install_ai(
         console.print(f"  [yellow]AI 模型安装失败[/yellow]")
         console.print(f"  {result.error_message}")
         console.print()
-
-
-# ------------------------------------------------------------------ #
-# cae download
-# ------------------------------------------------------------------ #
-
-@app.command(name="download")
-def download_file(
-    url: str = typer.Argument(..., help="下载链接（支持直链、网盘链接等）"),
-    output: Optional[Path] = typer.Option(None, "-o", "--output", help="输出文件路径"),
-    filename: Optional[str] = typer.Option(None, "-n", "--name", help="指定保存的文件名"),
-) -> None:
-    """
-    [bold]下载文件（AI 模型等大文件）[/bold]
-
-    支持从任意 URL 下载文件，自动命名，进度显示。
-
-    \b
-    示例：
-      cae download "https://example.com/model.gguf"
-      cae download "https://example.com/model.gguf" -o models/
-      cae download "https://example.com/model.gguf" -n my_model.gguf
-    """
-    from cae.installer.model_installer import ModelInstaller
-
-    mi = ModelInstaller()
-
-    # 确定输出路径
-    if output and output.is_dir():
-        # 目录模式：结合 filename 生成最终路径
-        name = filename or url.split("/")[-1].split("?")[0]
-        dest = output / name
-    elif output:
-        # 指定具体文件路径
-        dest = output
-        if filename:
-            console.print("[yellow]警告: -o 已指定文件路径，-n 参数将被忽略[/yellow]")
-    else:
-        # 默认保存到 models 目录
-        name = filename or url.split("/")[-1].split("?")[0]
-        dest = mi.models_dir / name
-
-    # 确保目录存在
-    dest.parent.mkdir(parents=True, exist_ok=True)
-
-    console.print()
-    console.print(f"  下载地址: [cyan]{url}[/cyan]")
-    console.print(f"  保存位置: [cyan]{dest}[/cyan]")
-    console.print()
-
-    try:
-        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                      TimeElapsedColumn(), console=console) as progress:
-            task = progress.add_task("  连接中...", total=None)
-
-            def _progress(pct: float, msg: str) -> None:
-                progress.update(task, description=f"  {msg}", completed=pct * 100)
-
-            result = mi.download_file(url, dest, progress_callback=_progress)
-
-        if result.success:
-            console.print()
-            console.print(f"  [green]下载完成！[/green]  文件: {result.file_path}  大小: {result.file_size_mb:.1f} MB")
-        else:
-            console.print()
-            console.print(f"  [red]下载失败: {result.error_message}[/red]")
-            raise typer.Exit(code=1)
-    except Exception as e:
-        console.print()
-        console.print(f"  [red]错误: {e}[/red]")
-        raise typer.Exit(code=1)
 
 
 @app.command()
