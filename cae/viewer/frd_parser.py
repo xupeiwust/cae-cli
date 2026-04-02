@@ -14,7 +14,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Sequence
 
 import numpy as np
 import numpy.typing as npt
@@ -58,7 +58,7 @@ class FrdResultStep:
     time: float
     name: str  # 字段名，如 "DISP", "STRESS"
     components: list[str]  # 分量名称列表
-    values: dict[int, np.ndarray]  # {节点ID: 分量值数组}
+    values: dict[int, Sequence[float]]  # {节点ID: 分量值序列}
     node_ids: list[int]  # 与 values 对应的节点编号
     entity: FrdResultEntity  # 结果实体类型
     step_inc_no: int = 0  # 步内增量号
@@ -217,7 +217,18 @@ _ETYPE_NODES: dict[int, int] = {
 }
 
 
-def parse_frd(frd_file: Path) -> FrdData:
+# 例如 "0.00000E+00-5.00000E-01" 需要被拆分成两个数字。
+_NUMBER_RE = re.compile(r"[+-]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?")
+_FRD_PREFIX_WIDTH = 13
+_FRD_VALUE_WIDTH = 12
+
+
+def parse_frd(
+    frd_file: Path,
+    *,
+    result_names: Optional[set[str]] = None,
+    include_element_connectivity: bool = True,
+) -> FrdData:
     """
     解析 CalculiX ASCII .frd 文件。
 
@@ -234,6 +245,12 @@ def parse_frd(frd_file: Path) -> FrdData:
     text = frd_file.read_text(encoding="latin-1", errors="replace")
     lines = text.splitlines()
 
+    wanted_result_names = (
+        {name.upper() for name in result_names}
+        if result_names
+        else None
+    )
+
     data = FrdData()
     i = 0
     n = len(lines)
@@ -248,13 +265,17 @@ def parse_frd(frd_file: Path) -> FrdData:
 
         # ---- 单元拓扑块 ----
         if line.startswith("    2C") or line.startswith("    2PSET") or line.startswith("    3C") or line.startswith("    3PSET"):
-            i, elems = _parse_elements(lines, i)
+            i, elems = _parse_elements(
+                lines,
+                i,
+                include_connectivity=include_element_connectivity,
+            )
             data.elements.extend(elems)
             continue
 
         # ---- 结果块 ----
         if line.startswith("  100C"):
-            i, result = _parse_result(lines, i)
+            i, result = _parse_result(lines, i, wanted_result_names)
             if result:
                 data.results.append(result)
             continue
@@ -293,36 +314,76 @@ def _fill_step_inc_no(results: list[FrdResultStep]) -> None:
             last_step_no = rs.step
         rs.step_inc_no = rs.total_inc_no - last_total_inc_no
 
+
+def _parse_fixed_width_row(
+    line: str,
+    value_count: int,
+) -> Optional[tuple[int, tuple[float, ...]]]:
+    """Fast path for standard FRD rows with fixed-width numeric columns."""
+    if value_count <= 0:
+        return None
+
+    expected_len = _FRD_PREFIX_WIDTH + value_count * _FRD_VALUE_WIDTH
+    if len(line) != expected_len:
+        return None
+
+    try:
+        row_id = int(line[3:_FRD_PREFIX_WIDTH])
+        if value_count == 3:
+            values = (
+                float(line[13:25]),
+                float(line[25:37]),
+                float(line[37:49]),
+            )
+        elif value_count == 6:
+            values = (
+                float(line[13:25]),
+                float(line[25:37]),
+                float(line[37:49]),
+                float(line[49:61]),
+                float(line[61:73]),
+                float(line[73:85]),
+            )
+        else:
+            values = tuple(
+                float(line[offset: offset + _FRD_VALUE_WIDTH])
+                for offset in range(_FRD_PREFIX_WIDTH, expected_len, _FRD_VALUE_WIDTH)
+            )
+    except ValueError:
+        return None
+
+    return row_id, values
+
 def _parse_nodes(lines: list[str], start: int) -> tuple[int, FrdNodes]:
     """解析节点坐标块，返回 (下一行索引, FrdNodes)。"""
     ids: list[int] = []
     coords: list[tuple[float, float, float]] = []
     i = start + 1
 
-    # 匹配科学计数法数字（包括可能紧贴的负号）
-    # 例如 "0.00000E+00-5.00000E-01" 会被正确拆分为 "0.00000E+00" 和 "-5.00000E-01"
-    number_pattern = r'[+-]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?'
-
     while i < len(lines):
         line = lines[i]
         if line.startswith(" -1"):
-            matches = re.findall(number_pattern, line)
-            # 格式: [-1, node_id, x, y, z] 或 [node_id, x, y, z]
-            # 需要至少4个数值
-            if len(matches) >= 5:
-                # 第一个是行标记-1，跳过
-                nid = int(matches[1])
-                x = float(matches[2])
-                y = float(matches[3])
-                z = float(matches[4])
-            elif len(matches) >= 4:
-                nid = int(matches[0])
-                x = float(matches[1])
-                y = float(matches[2])
-                z = float(matches[3])
+            parsed = _parse_fixed_width_row(line, 3)
+            if parsed is not None:
+                nid, (x, y, z) = parsed
             else:
-                i += 1
-                continue
+                matches = _NUMBER_RE.findall(line)
+                # 格式: [-1, node_id, x, y, z] 或 [node_id, x, y, z]
+                # 需要至少4个数值
+                if len(matches) >= 5:
+                    # 第一个是行标记-1，跳过
+                    nid = int(matches[1])
+                    x = float(matches[2])
+                    y = float(matches[3])
+                    z = float(matches[4])
+                elif len(matches) >= 4:
+                    nid = int(matches[0])
+                    x = float(matches[1])
+                    y = float(matches[2])
+                    z = float(matches[3])
+                else:
+                    i += 1
+                    continue
 
             # 验证节点ID是合理的（通常是正整数）
             if nid > 0:
@@ -337,7 +398,12 @@ def _parse_nodes(lines: list[str], start: int) -> tuple[int, FrdNodes]:
     return i, FrdNodes(ids=ids, coords=coords)
 
 
-def _parse_elements(lines: list[str], start: int) -> tuple[int, list[FrdElement]]:
+def _parse_elements(
+    lines: list[str],
+    start: int,
+    *,
+    include_connectivity: bool = True,
+) -> tuple[int, list[FrdElement]]:
     """解析单元拓扑块。
 
     注意：C3D20R 等高阶单元的连接数据可能跨越多行（每行10个节点）。
@@ -363,10 +429,13 @@ def _parse_elements(lines: list[str], start: int) -> tuple[int, list[FrdElement]
                 connectivity: list[int] = []
                 i += 1
                 while i < len(lines) and lines[i].startswith(" -2"):
-                    conn_parts = lines[i].split()[1:]
-                    connectivity.extend(int(x) for x in conn_parts)
+                    if include_connectivity:
+                        connectivity.extend(map(int, lines[i].split()[1:]))
                     i += 1
-                if connectivity:
+                if include_connectivity:
+                    if connectivity:
+                        elements.append(FrdElement(eid=eid, etype=etype, connectivity=connectivity))
+                else:
                     elements.append(FrdElement(eid=eid, etype=etype, connectivity=connectivity))
         elif line.startswith(" -3"):
             i += 1
@@ -377,7 +446,11 @@ def _parse_elements(lines: list[str], start: int) -> tuple[int, list[FrdElement]
     return i, elements
 
 
-def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResultStep]]:
+def _parse_result(
+    lines: list[str],
+    start: int,
+    wanted_result_names: Optional[set[str]] = None,
+) -> tuple[int, Optional[FrdResultStep]]:
     """解析单个结果块（位移、应力等）。"""
     header = lines[start]
     # 格式示例："  100C                             DISP        1  0.00000E+00"
@@ -390,6 +463,11 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
 
     if len(parts) >= 2:
         field_name = parts[1] if len(parts) > 1 else "UNKNOWN"
+
+    capture_block = (
+        wanted_result_names is None
+        or field_name.upper() in wanted_result_names
+    )
 
     # 找 step, time, total_inc_no
     for j, p in enumerate(parts):
@@ -425,7 +503,7 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
     i = start + 1
     components: list[str] = []
     node_ids: list[int] = []
-    values: dict[int, np.ndarray] = {}
+    values: dict[int, Sequence[float]] = {}
 
     while i < len(lines):
         line = lines[i]
@@ -439,6 +517,10 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
                 # 如果 parts[1] 不是数字，说明是字段名
                 if not candidate.isdigit():
                     field_name = candidate
+                    capture_block = (
+                        wanted_result_names is None
+                        or field_name.upper() in wanted_result_names
+                    )
                     # 更新 entity
                     try:
                         entity = FrdResultEntity(field_name)
@@ -449,23 +531,37 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
 
         # 分量定义行
         if line.startswith(" -5"):
+            if not capture_block:
+                i += 1
+                continue
             # 分量名行：" -5  D1  1  2  1  0"
             parts5 = line.split()
             if len(parts5) >= 2:
                 components.append(parts5[1])
 
         elif line.startswith(" -1"):
+            if not capture_block:
+                i += 1
+                continue
             # 结果数值行
-            number_pattern = r'[-+]?[0-9]*\.?[0-9]+(?:[eE][-+]?[0-9]+)?'
-            matches = re.findall(number_pattern, line)
-            if len(matches) >= 3:
+            parsed = _parse_fixed_width_row(line, len(components))
+            if parsed is not None:
                 try:
-                    nid = int(matches[1])
-                    vals = np.array([float(v) for v in matches[2:]], dtype=np.float64)
+                    nid, vals = parsed
                     node_ids.append(nid)
                     values[nid] = vals
-                except (ValueError, IndexError):
+                except ValueError:
                     pass
+            else:
+                matches = _NUMBER_RE.findall(line)
+                if len(matches) >= 3:
+                    try:
+                        nid = int(matches[1])
+                        vals = tuple(map(float, matches[2:]))
+                        node_ids.append(nid)
+                        values[nid] = vals
+                    except (ValueError, IndexError):
+                        pass
 
         elif line.startswith(" -3"):
             i += 1
@@ -473,7 +569,7 @@ def _parse_result(lines: list[str], start: int) -> tuple[int, Optional[FrdResult
 
         i += 1
 
-    if not node_ids:
+    if not capture_block or not node_ids:
         return i, None
 
     # 根据 entity 类型推断 entity_location
