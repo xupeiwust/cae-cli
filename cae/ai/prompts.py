@@ -564,6 +564,7 @@ def make_diagnose_prompt_v2(
     physical_data: str = "",
     stderr_summary: str = "",
     similar_cases: list[dict] | None = None,
+    evidence_digest: str = "",
 ) -> str:
     """Generate an evidence-focused prompt for local diagnosis models."""
     if rule_issues:
@@ -604,6 +605,9 @@ def make_diagnose_prompt_v2(
 
 ### 物理量摘要
 {physical_data or "无物理量摘要。"}
+
+### 证据摘要
+{evidence_digest or "无结构化证据摘要。"}
 
 ### 收敛摘要
 {stderr_summary or "无收敛摘要。"}

@@ -1,0 +1,8 @@
+*HEADING
+Missing result file sample
+*BOUNDARY
+1, 1, 3, 0.0
+*STEP
+*STATIC
+0.1, 1.0
+*END STEP

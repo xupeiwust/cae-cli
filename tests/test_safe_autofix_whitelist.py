@@ -102,9 +102,46 @@ def test_get_safe_autofixable_issues_filters_to_explicit_whitelist() -> None:
             message="INP file missing *STEP definition",
             suggestion="add a *STEP block",
         ),
+        DiagnosticIssue(
+            severity="error",
+            category="input_syntax",
+            message="*STEP block is not closed: found 1 *STEP but only 0 *END STEP",
+            suggestion="append missing *END STEP",
+        ),
     ]
 
     safe_issues = get_safe_autofixable_issues(issues)
 
-    assert len(safe_issues) == 2
+    assert len(safe_issues) == 3
     assert all(issue.category in {"material", "input_syntax"} for issue in safe_issues)
+
+
+def test_autofix_accepts_missing_end_step_issue() -> None:
+    workspace = _make_workspace()
+    try:
+        inp_file = workspace / "model.inp"
+        inp_file.write_text(
+            "*HEADING\n"
+            "*STEP\n"
+            "*STATIC\n"
+            "0.1, 1.0\n",
+            encoding="utf-8",
+        )
+
+        issue = DiagnosticIssue(
+            severity="error",
+            category="input_syntax",
+            message="*STEP block is not closed: found 1 *STEP but only 0 *END STEP",
+            suggestion="append missing *END STEP",
+        )
+
+        result = fix_inp(inp_file, [issue], workspace)
+
+        assert result.success is True
+        assert result.fixed_path is not None and result.fixed_path.exists()
+        fixed_text = result.fixed_path.read_text(encoding="utf-8")
+        assert "*END STEP" in fixed_text
+        assert result.verification_status == "passed"
+        assert "input_missing_end_step" in result.verification_notes
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)

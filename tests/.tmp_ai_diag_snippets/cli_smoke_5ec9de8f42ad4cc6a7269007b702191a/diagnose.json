@@ -1,0 +1,64 @@
+{
+  "success": true,
+  "error": null,
+  "issue_count": 1,
+  "summary": {
+    "total": 1,
+    "error_count": 1,
+    "warning_count": 0,
+    "auto_fixable_count": 0,
+    "top_issue": {
+      "severity": "error",
+      "category": "convergence",
+      "title": "Convergence Issue",
+      "message": "迭代未收敛",
+      "location": "case.stderr",
+      "suggestion": "检查载荷步设置，增大迭代次数或调整收敛容差",
+      "priority": 2,
+      "auto_fixable": false
+    },
+    "first_action": "检查载荷步设置，增大迭代次数或调整收敛容差",
+    "by_category": {
+      "convergence": 1
+    },
+    "by_severity": {
+      "error": 1
+    },
+    "risk_score": 32,
+    "action_items": [
+      "检查载荷步设置，增大迭代次数或调整收敛容差"
+    ]
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "category": "convergence",
+      "title": "Convergence Issue",
+      "message": "迭代未收敛",
+      "location": "case.stderr",
+      "suggestion": "检查载荷步设置，增大迭代次数或调整收敛容差",
+      "priority": 2,
+      "auto_fixable": false
+    }
+  ],
+  "level1_issues": [
+    {
+      "severity": "error",
+      "category": "convergence",
+      "title": "Convergence Issue",
+      "message": "迭代未收敛",
+      "location": "case.stderr",
+      "suggestion": "检查载荷步设置，增大迭代次数或调整收敛容差",
+      "priority": 2,
+      "auto_fixable": false
+    }
+  ],
+  "level2_issues": [],
+  "ai_diagnosis": null,
+  "similar_cases": [],
+  "meta": {
+    "results_dir": "tests\\.tmp_ai_diag_snippets\\cli_smoke_5ec9de8f42ad4cc6a7269007b702191a",
+    "inp_file": null,
+    "ai_enabled": false
+  }
+}

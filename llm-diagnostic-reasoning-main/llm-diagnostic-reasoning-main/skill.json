@@ -1,0 +1,116 @@
+{
+  "name": "diagnostic-reasoning",
+  "version": "1.0.0",
+  "description": "🔍 AI-Powered Diagnostic Reasoning - Multi-method causal inference for HVAC, medical, and industrial diagnostics",
+  "author": "Your Name",
+  "license": "MIT",
+  "main": "src/skill_main.py",
+  "keywords": [
+    "diagnostic",
+    "reasoning",
+    "causal-inference",
+    "bayesian-network",
+    "fault-diagnosis",
+    "llm",
+    "claude",
+    "medical-diagnosis",
+    "hvac",
+    "industrial"
+  ],
+  "commands": {
+    "diagnose": {
+      "description": "🩺 Start interactive diagnostic session",
+      "usage": "/diagnose [method] [domain]",
+      "examples": [
+        "/diagnose chain hvac",
+        "/diagnose symptom medical",
+        "/diagnose bayesian industrial"
+      ]
+    },
+    "compare": {
+      "description": "📊 Compare all three diagnostic methods",
+      "usage": "/compare <case-file>",
+      "examples": [
+        "/compare examples/hvac_case1.json"
+      ]
+    },
+    "visualize": {
+      "description": "🎨 Generate reasoning chain visualization",
+      "usage": "/visualize <result-file>",
+      "examples": [
+        "/visualize results/diagnosis_20260226.json"
+      ]
+    },
+    "demo": {
+      "description": "🚀 Run interactive demo",
+      "usage": "/demo [domain]",
+      "examples": [
+        "/demo hvac",
+        "/demo medical",
+        "/demo industrial"
+      ]
+    }
+  },
+  "methods": {
+    "chain": {
+      "name": "Multi-Step Reasoning Chain",
+      "description": "Hypothesis → Reasoning → Verification",
+      "source": "ahu-diagnostic-backend",
+      "strengths": ["Explainable", "No training data needed", "Flexible"],
+      "best_for": ["Known fault types", "Verification tasks"]
+    },
+    "symptom": {
+      "name": "Symptom-Driven Diagnosis",
+      "description": "Symptoms → Knowledge Base → Root Cause",
+      "source": "symptom-driven-diagnosis",
+      "strengths": ["Real-world scenarios", "Interactive queries", "Scalable"],
+      "best_for": ["Unknown faults", "Complex systems"]
+    },
+    "bayesian": {
+      "name": "Bayesian Network Generation",
+      "description": "LLM Structure → Data Training → Probabilistic Inference",
+      "source": "bayesian_network_generation",
+      "strengths": ["Fast inference", "Probabilistic", "Data-driven"],
+      "best_for": ["Large datasets", "Uncertainty quantification"]
+    }
+  },
+  "domains": {
+    "hvac": {
+      "name": "HVAC Systems",
+      "description": "Air Handling Unit fault diagnosis",
+      "variables": 30,
+      "fault_types": 19,
+      "example_cases": 5
+    },
+    "medical": {
+      "name": "Medical Diagnosis",
+      "description": "Disease diagnosis from symptoms",
+      "example_cases": 3
+    },
+    "industrial": {
+      "name": "Industrial Equipment",
+      "description": "Manufacturing equipment fault diagnosis",
+      "example_cases": 2
+    }
+  },
+  "dependencies": {
+    "python": ">=3.8",
+    "packages": [
+      "pandas",
+      "numpy",
+      "pgmpy",
+      "networkx",
+      "matplotlib",
+      "graphviz"
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/yourusername/llm-diagnostic-reasoning"
+  },
+  "badges": [
+    "[![Claude Skill](https://img.shields.io/badge/Claude-Skill-blue)](https://claude.ai)",
+    "[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)",
+    "[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)"
+  ]
+}

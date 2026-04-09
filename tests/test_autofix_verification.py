@@ -106,3 +106,31 @@ def test_convergence_autofix_reports_reduced_increment() -> None:
         assert "reduced from 0.2 to 0.02" in result.verification_notes
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
+
+
+def test_missing_end_step_autofix_reports_passed_verification() -> None:
+    workspace = _make_workspace()
+    try:
+        inp_file = workspace / "model.inp"
+        inp_file.write_text(
+            "*HEADING\n"
+            "*STEP\n"
+            "*STATIC\n"
+            "0.1, 1.0\n",
+            encoding="utf-8",
+        )
+
+        issue = DiagnosticIssue(
+            severity="error",
+            category="input_syntax",
+            message="*STEP block is not closed: found 1 *STEP but only 0 *END STEP",
+            suggestion="append missing *END STEP",
+        )
+
+        result = fix_inp(inp_file, [issue], workspace)
+
+        assert result.success is True
+        assert result.verification_status == "passed"
+        assert "input_missing_end_step: *STEP/*END STEP pairs are balanced" in result.verification_notes
+    finally:
+        shutil.rmtree(workspace, ignore_errors=True)
