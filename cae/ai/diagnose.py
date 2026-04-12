@@ -37,6 +37,7 @@ from .llm_client import LLMClient
 from .prompts import make_diagnose_prompt_v2
 from .stream_handler import StreamHandler
 from .explain import _find_frd, _extract_stats
+from .diagnosis_history import DiagnosisHistoryStore, IssueObservation
 from .reference_cases import CaseMetadata, CaseDatabase, parse_inp_metadata, ClassificationTree
 from cae.viewer.frd_parser import FrdData, parse_frd
 
@@ -161,6 +162,12 @@ class DiagnosticIssue:
     evidence_score: Optional[float] = None
     evidence_support_count: Optional[int] = None
     evidence_conflict: Optional[str] = None
+    history_hits: Optional[int] = None
+    history_avg_score: Optional[float] = None
+    history_conflict_rate: Optional[float] = None
+    history_similarity: Optional[float] = None
+    history_similar_hits: Optional[int] = None
+    history_similar_conflict_rate: Optional[float] = None
     suggestion: Optional[str] = None
     priority: Optional[int] = None
     auto_fixable: Optional[bool] = None
@@ -295,14 +302,39 @@ def _clamp_evidence_score(score: float) -> float:
 
 EVIDENCE_CONFLICT_PENALTY = 0.30
 EVIDENCE_GUARDRAILS_PATH = Path(__file__).parent / "data" / "evidence_guardrails.json"
+HISTORY_BOOST_MIN_HITS = 2
+HISTORY_BOOST_MIN_SCORE = 0.75
+HISTORY_BOOST_MAX_CONFLICT_RATE = 0.20
+HISTORY_PENALTY_MIN_HITS = 2
+HISTORY_PENALTY_MIN_CONFLICT_RATE = 0.50
+HISTORY_BOOST = 0.05
+HISTORY_PENALTY = 0.08
+HISTORY_SIMILARITY_MIN = 0.55
+HISTORY_SIM_BOOST_MIN_HITS = 3
+HISTORY_SIM_BOOST_MIN_SCORE = 0.75
+HISTORY_SIM_BOOST_MAX_CONFLICT_RATE = 0.25
+HISTORY_SIM_PENALTY_MIN_HITS = 3
+HISTORY_SIM_PENALTY_MIN_CONFLICT_RATE = 0.55
+HISTORY_SIM_BOOST = 0.03
+HISTORY_SIM_PENALTY = 0.06
+EVIDENCE_SOURCE_TRUST_BY_EXT: dict[str, float] = {
+    ".stderr": 1.0,
+    ".sta": 0.95,
+    ".dat": 0.75,
+    ".cvg": 0.70,
+    ".inp": 0.65,
+}
 DEFAULT_EVIDENCE_GUARDRAILS_BY_CATEGORY: dict[str, dict[str, float]] = {
-    "convergence": {"min_support": 2, "min_score": 0.72, "score_penalty": 0.15},
-    "boundary_condition": {"min_support": 2, "min_score": 0.70, "score_penalty": 0.12},
-    "contact": {"min_support": 2, "min_score": 0.72, "score_penalty": 0.12},
-    "dynamics": {"min_support": 2, "min_score": 0.70, "score_penalty": 0.12},
-    "load_transfer": {"min_support": 2, "min_score": 0.68, "score_penalty": 0.10},
-    "input_syntax": {"min_support": 1, "min_score": 0.45, "score_penalty": 0.06},
-    "material": {"min_support": 1, "min_score": 0.45, "score_penalty": 0.06},
+    # Fallback for categories without explicit thresholds.
+    # Keep conservative so high-confidence explicit errors still stay as errors.
+    "default": {"min_support": 1, "min_score": 0.55, "min_trust": 0.65, "score_penalty": 0.08},
+    "convergence": {"min_support": 2, "min_score": 0.72, "min_trust": 0.80, "score_penalty": 0.15},
+    "boundary_condition": {"min_support": 2, "min_score": 0.70, "min_trust": 0.80, "score_penalty": 0.12},
+    "contact": {"min_support": 2, "min_score": 0.72, "min_trust": 0.80, "score_penalty": 0.12},
+    "dynamics": {"min_support": 2, "min_score": 0.70, "min_trust": 0.80, "score_penalty": 0.12},
+    "load_transfer": {"min_support": 2, "min_score": 0.68, "min_trust": 0.78, "score_penalty": 0.10},
+    "input_syntax": {"min_support": 1, "min_score": 0.45, "min_trust": 0.60, "score_penalty": 0.06},
+    "material": {"min_support": 1, "min_score": 0.45, "min_trust": 0.60, "score_penalty": 0.06},
 }
 
 
@@ -310,6 +342,7 @@ def _validate_guardrail_entry(entry: dict) -> Optional[dict[str, float]]:
     try:
         min_support = max(1, int(entry.get("min_support", 1)))
         min_score = _clamp_evidence_score(float(entry.get("min_score", 0.0)))
+        min_trust = _clamp_evidence_score(float(entry.get("min_trust", 0.0)))
         score_penalty = _clamp_evidence_score(float(entry.get("score_penalty", 0.1)))
     except (TypeError, ValueError):
         return None
@@ -317,8 +350,24 @@ def _validate_guardrail_entry(entry: dict) -> Optional[dict[str, float]]:
     return {
         "min_support": float(min_support),
         "min_score": float(min_score),
+        "min_trust": float(min_trust),
         "score_penalty": float(score_penalty),
     }
+
+
+def _infer_evidence_source_trust(issue: DiagnosticIssue) -> float:
+    file_name: Optional[str] = None
+    if issue.evidence_line and ":" in issue.evidence_line:
+        file_name = issue.evidence_line.split(":", 1)[0].strip()
+    elif issue.location and issue.location.strip():
+        hinted_file, _ = _parse_issue_location_hint(issue.location)
+        file_name = hinted_file
+
+    if not file_name:
+        return 0.60
+
+    ext = Path(file_name).suffix.lower()
+    return EVIDENCE_SOURCE_TRUST_BY_EXT.get(ext, 0.60)
 
 
 @lru_cache(maxsize=16)
@@ -392,6 +441,14 @@ def _infer_evidence_score(issue: DiagnosticIssue) -> float:
         if support_count <= 1 and issue.severity == "error":
             score -= 0.05
 
+    source_trust = _infer_evidence_source_trust(issue)
+    if source_trust >= 0.90:
+        score += 0.08
+    elif source_trust < 0.75:
+        score -= 0.08
+        if (support_count or 0) <= 1 and issue.severity == "error":
+            score -= 0.05
+
     return round(_apply_evidence_conflict_penalty(score, issue), 2)
 
 
@@ -448,6 +505,12 @@ def normalize_issues(issues: list[DiagnosticIssue]) -> list[DiagnosticIssue]:
             evidence_score=_infer_evidence_score(issue),
             evidence_support_count=issue.evidence_support_count,
             evidence_conflict=issue.evidence_conflict.strip() if issue.evidence_conflict else None,
+            history_hits=issue.history_hits,
+            history_avg_score=issue.history_avg_score,
+            history_conflict_rate=issue.history_conflict_rate,
+            history_similarity=issue.history_similarity,
+            history_similar_hits=issue.history_similar_hits,
+            history_similar_conflict_rate=issue.history_similar_conflict_rate,
             suggestion=issue.suggestion.strip() if issue.suggestion else None,
             priority=_infer_priority(issue),
             auto_fixable=_infer_auto_fixable(issue),
@@ -502,8 +565,15 @@ def issue_to_dict(issue: DiagnosticIssue) -> dict:
         "location": issue.location,
         "evidence_line": issue.evidence_line,
         "evidence_score": _infer_evidence_score(issue),
+        "evidence_source_trust": round(_infer_evidence_source_trust(issue), 2),
         "evidence_support_count": issue.evidence_support_count,
         "evidence_conflict": issue.evidence_conflict,
+        "history_hits": issue.history_hits,
+        "history_avg_score": issue.history_avg_score,
+        "history_conflict_rate": issue.history_conflict_rate,
+        "history_similarity": issue.history_similarity,
+        "history_similar_hits": issue.history_similar_hits,
+        "history_similar_conflict_rate": issue.history_similar_conflict_rate,
         "suggestion": issue.suggestion,
         "priority": issue.priority,
         "auto_fixable": bool(issue.auto_fixable),
@@ -1326,6 +1396,7 @@ def diagnose_results(
     *,
     stream: bool = True,
     guardrails_path: Optional[Path] = None,
+    history_db_path: Optional[Path] = None,
 ) -> DiagnoseResult:
     """
     娑撳鐪板▎陇鐦栭弬顓溾偓?
@@ -1381,6 +1452,10 @@ def diagnose_results(
             result.level1_issues,
             guardrails_path=guardrails_path,
         )
+        result.level1_issues = _apply_history_consistency_guardrails(
+            result.level1_issues,
+            history_db_path=history_db_path,
+        )
 
         # ========== Level 2: 閸欏倽鈧啯顢嶆笟瀣嚠濮ｆ棑绱欓弮鐘虫蒋娴犺埖澧界悰宀嬬礆==========
         ref_result = _check_reference_cases(results_dir, inp_file, ctx=ctx)
@@ -1394,6 +1469,10 @@ def diagnose_results(
         result.level2_issues = _apply_category_evidence_guardrails(
             result.level2_issues,
             guardrails_path=guardrails_path,
+        )
+        result.level2_issues = _apply_history_consistency_guardrails(
+            result.level2_issues,
+            history_db_path=history_db_path,
         )
         result.similar_cases = ref_result["similar_cases"]
         result.convergence_metrics = _get_convergence_metrics(results_dir, ctx=ctx)
@@ -1647,6 +1726,12 @@ def _apply_convergence_contradiction_rules(
                 evidence_score=evidence_score,
                 evidence_support_count=issue.evidence_support_count,
                 evidence_conflict=evidence_conflict,
+                history_hits=issue.history_hits,
+                history_avg_score=issue.history_avg_score,
+                history_conflict_rate=issue.history_conflict_rate,
+                history_similarity=issue.history_similarity,
+                history_similar_hits=issue.history_similar_hits,
+                history_similar_conflict_rate=issue.history_similar_conflict_rate,
                 suggestion=suggestion,
                 priority=issue.priority,
                 auto_fixable=issue.auto_fixable,
@@ -1669,7 +1754,7 @@ def _apply_category_evidence_guardrails(
     adjusted: list[DiagnosticIssue] = []
 
     for issue in issues:
-        guardrail = guardrails.get(issue.category)
+        guardrail = guardrails.get(issue.category) or guardrails.get("default") or guardrails.get("*")
         support_count = issue.evidence_support_count
         if support_count is None:
             support_count = 1 if issue.evidence_line else 0
@@ -1680,14 +1765,17 @@ def _apply_category_evidence_guardrails(
 
         min_support = int(guardrail.get("min_support", 1))
         min_score = float(guardrail.get("min_score", 0.0))
+        min_trust = float(guardrail.get("min_trust", 0.0))
         score_penalty = float(guardrail.get("score_penalty", 0.1))
         evidence_score = issue.evidence_score
         if evidence_score is None:
             evidence_score = _infer_evidence_score(issue)
+        source_trust = _infer_evidence_source_trust(issue)
 
         low_support = support_count < min_support
         low_score = float(evidence_score) < min_score
-        should_downgrade = low_support or low_score
+        low_trust = source_trust < min_trust
+        should_downgrade = low_support or low_score or low_trust
         if not should_downgrade:
             adjusted.append(issue)
             continue
@@ -1697,6 +1785,8 @@ def _apply_category_evidence_guardrails(
             reason_parts.append(f"support={support_count}<{min_support}")
         if low_score:
             reason_parts.append(f"score={float(evidence_score):.2f}<{min_score:.2f}")
+        if low_trust:
+            reason_parts.append(f"trust={source_trust:.2f}<{min_trust:.2f}")
         reason_suffix = ", ".join(reason_parts)
         conflict_reason = f"Evidence guardrail triggered ({reason_suffix})."
         note = "Auto-downgraded by category evidence guardrail."
@@ -1727,12 +1817,156 @@ def _apply_category_evidence_guardrails(
                 evidence_score=evidence_score,
                 evidence_support_count=support_count,
                 evidence_conflict=evidence_conflict,
+                history_hits=issue.history_hits,
+                history_avg_score=issue.history_avg_score,
+                history_conflict_rate=issue.history_conflict_rate,
+                history_similarity=issue.history_similarity,
+                history_similar_hits=issue.history_similar_hits,
+                history_similar_conflict_rate=issue.history_similar_conflict_rate,
                 suggestion=suggestion,
                 priority=issue.priority,
                 auto_fixable=issue.auto_fixable,
             )
         )
 
+    return normalize_issues(adjusted)
+
+
+def _apply_history_consistency_guardrails(
+    issues: list[DiagnosticIssue],
+    *,
+    history_db_path: Optional[Path] = None,
+) -> list[DiagnosticIssue]:
+    if not issues:
+        return normalize_issues(issues)
+
+    store = DiagnosisHistoryStore(history_db_path)
+    if not store.enabled:
+        return normalize_issues(issues)
+
+    normalized = normalize_issues(issues)
+    adjusted: list[DiagnosticIssue] = []
+    observations: list[IssueObservation] = []
+
+    for issue in normalized:
+        issue_key = _issue_dedup_key(issue)[1]
+        stats = store.get_stats(issue_key=issue_key, category=issue.category)
+        similar_stats = None
+        if stats.hits <= 0:
+            similar_candidates = store.get_similar_stats(
+                issue_key=issue_key,
+                category=issue.category,
+                limit=1,
+                min_similarity=HISTORY_SIMILARITY_MIN,
+            )
+            if similar_candidates:
+                similar_stats = similar_candidates[0]
+
+        evidence_score = float(issue.evidence_score if issue.evidence_score is not None else _infer_evidence_score(issue))
+        evidence_conflict = (issue.evidence_conflict or "").strip()
+        suggestion = issue.suggestion
+        severity = issue.severity
+
+        if (
+            stats.hits >= HISTORY_PENALTY_MIN_HITS
+            and stats.conflict_rate >= HISTORY_PENALTY_MIN_CONFLICT_RATE
+        ):
+            evidence_score = _clamp_evidence_score(evidence_score - HISTORY_PENALTY)
+            reason = (
+                "Historical consistency low "
+                f"(hits={stats.hits}, conflict_rate={stats.conflict_rate:.2f})."
+            )
+            if evidence_conflict:
+                if reason not in evidence_conflict:
+                    evidence_conflict = f"{evidence_conflict}; {reason}"
+            else:
+                evidence_conflict = reason
+            if severity == "error":
+                severity = "warning"
+                note = "Auto-downgraded by history consistency guardrail."
+                suggestion = (suggestion or "").strip()
+                if suggestion:
+                    if note not in suggestion:
+                        suggestion = f"{suggestion}; {note}"
+                else:
+                    suggestion = note
+        elif (
+            stats.hits >= HISTORY_BOOST_MIN_HITS
+            and stats.avg_score >= HISTORY_BOOST_MIN_SCORE
+            and stats.conflict_rate <= HISTORY_BOOST_MAX_CONFLICT_RATE
+        ):
+            evidence_score = _clamp_evidence_score(evidence_score + HISTORY_BOOST)
+        elif similar_stats is not None:
+            if (
+                similar_stats.hits >= HISTORY_SIM_PENALTY_MIN_HITS
+                and similar_stats.conflict_rate >= HISTORY_SIM_PENALTY_MIN_CONFLICT_RATE
+            ):
+                evidence_score = _clamp_evidence_score(evidence_score - HISTORY_SIM_PENALTY)
+                reason = (
+                    "Historical similar issues unstable "
+                    f"(sim={similar_stats.similarity:.2f}, hits={similar_stats.hits}, "
+                    f"conflict_rate={similar_stats.conflict_rate:.2f})."
+                )
+                if evidence_conflict:
+                    if reason not in evidence_conflict:
+                        evidence_conflict = f"{evidence_conflict}; {reason}"
+                else:
+                    evidence_conflict = reason
+                if severity == "error":
+                    severity = "warning"
+                    note = "Auto-downgraded by similar-history guardrail."
+                    suggestion = (suggestion or "").strip()
+                    if suggestion:
+                        if note not in suggestion:
+                            suggestion = f"{suggestion}; {note}"
+                    else:
+                        suggestion = note
+            elif (
+                similar_stats.hits >= HISTORY_SIM_BOOST_MIN_HITS
+                and similar_stats.avg_score >= HISTORY_SIM_BOOST_MIN_SCORE
+                and similar_stats.conflict_rate <= HISTORY_SIM_BOOST_MAX_CONFLICT_RATE
+            ):
+                evidence_score = _clamp_evidence_score(evidence_score + HISTORY_SIM_BOOST)
+
+        support_count = issue.evidence_support_count
+        if support_count is None:
+            support_count = 1 if issue.evidence_line else 0
+        source_trust = _infer_evidence_source_trust(issue)
+
+        adjusted_issue = DiagnosticIssue(
+            severity=severity,
+            category=issue.category,
+            message=issue.message,
+            location=issue.location,
+            evidence_line=issue.evidence_line,
+            evidence_score=round(evidence_score, 2),
+            evidence_support_count=support_count,
+            evidence_conflict=evidence_conflict or None,
+            history_hits=stats.hits,
+            history_avg_score=round(float(stats.avg_score), 2) if stats.hits > 0 else 0.0,
+            history_conflict_rate=round(float(stats.conflict_rate), 2) if stats.hits > 0 else 0.0,
+            history_similarity=round(float(similar_stats.similarity), 2) if similar_stats is not None else None,
+            history_similar_hits=int(similar_stats.hits) if similar_stats is not None else None,
+            history_similar_conflict_rate=(
+                round(float(similar_stats.conflict_rate), 2) if similar_stats is not None else None
+            ),
+            suggestion=suggestion,
+            priority=issue.priority,
+            auto_fixable=issue.auto_fixable,
+        )
+        adjusted.append(adjusted_issue)
+        observations.append(
+            IssueObservation(
+                issue_key=issue_key,
+                category=issue.category,
+                evidence_score=adjusted_issue.evidence_score or 0.0,
+                source_trust=source_trust,
+                support_count=support_count,
+                has_conflict=bool(adjusted_issue.evidence_conflict),
+            )
+        )
+
+    store.record_observations(observations)
     return normalize_issues(adjusted)
 
 

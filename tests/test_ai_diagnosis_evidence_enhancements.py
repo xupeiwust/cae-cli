@@ -8,6 +8,7 @@ from cae.ai.diagnose import (
     DiagnosticIssue,
     DiagnoseResult,
     _apply_category_evidence_guardrails,
+    _infer_evidence_source_trust,
     _get_evidence_guardrails,
     _get_stderr_snippets,
     _get_stderr_summary,
@@ -432,6 +433,25 @@ def test_category_guardrail_keeps_input_syntax_error_with_single_source() -> Non
     assert guarded[0].evidence_conflict is None
 
 
+def test_default_guardrail_downgrades_unconfigured_low_confidence_error() -> None:
+    issues = [
+        DiagnosticIssue(
+            severity="error",
+            category="mesh_quality",
+            message="possible distorted element pattern",
+            evidence_score=0.35,
+            evidence_support_count=0,
+        )
+    ]
+
+    guarded = _apply_category_evidence_guardrails(issues)
+
+    assert len(guarded) == 1
+    assert guarded[0].severity == "warning"
+    assert "Evidence guardrail triggered" in (guarded[0].evidence_conflict or "")
+    assert "support=0<1" in (guarded[0].evidence_conflict or "")
+
+
 def test_category_guardrail_uses_external_config_override(monkeypatch) -> None:
     tmp_path = Path("tests/.tmp_ai_diag_snippets") / uuid4().hex
     tmp_path.mkdir(parents=True, exist_ok=True)
@@ -470,3 +490,44 @@ def test_category_guardrail_uses_external_config_override(monkeypatch) -> None:
         assert guarded[0].evidence_conflict is None
     finally:
         _get_evidence_guardrails.cache_clear()
+
+
+def test_evidence_source_trust_is_lower_for_dat_than_stderr() -> None:
+    stderr_issue = DiagnosticIssue(
+        severity="warning",
+        category="convergence",
+        message="not converged",
+        evidence_line="case.stderr:9: not converged",
+    )
+    dat_issue = DiagnosticIssue(
+        severity="warning",
+        category="convergence",
+        message="not converged",
+        evidence_line="case.dat:9: not converged",
+    )
+
+    stderr_trust = _infer_evidence_source_trust(stderr_issue)
+    dat_trust = _infer_evidence_source_trust(dat_issue)
+
+    assert stderr_trust > dat_trust
+    assert stderr_trust >= 0.9
+    assert dat_trust <= 0.8
+
+
+def test_category_guardrail_downgrades_low_trust_error() -> None:
+    issues = [
+        DiagnosticIssue(
+            severity="error",
+            category="convergence",
+            message="increment did not converge",
+            evidence_line="case.dat:12: increment did not converge",
+            evidence_score=0.92,
+            evidence_support_count=2,
+        )
+    ]
+
+    guarded = _apply_category_evidence_guardrails(issues)
+
+    assert len(guarded) == 1
+    assert guarded[0].severity == "warning"
+    assert "trust=" in (guarded[0].evidence_conflict or "")

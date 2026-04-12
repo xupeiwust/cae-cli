@@ -133,6 +133,9 @@ cae diagnose results/ --json-out out/diagnose.json
 
 # Override evidence guardrails config
 cae diagnose results/ --json --guardrails cae/ai/data/evidence_guardrails.json
+
+# Enable optional diagnosis history calibration (SQLite)
+cae diagnose results/ --json --history-db out/diagnosis_history.db
 ```
 
 ---
@@ -151,6 +154,17 @@ Guardrail thresholds are category-aware and configurable:
 - Default config path: `cae/ai/data/evidence_guardrails.json`
 - CLI override: `--guardrails <path>`
 - Environment override: `CAE_EVIDENCE_GUARDRAILS_PATH=<path>`
+
+You can also enable history-consistency calibration:
+
+- CLI option: `--history-db <path>`
+- Environment fallback: `CAE_DIAG_HISTORY_DB_PATH=<path>`
+- JSON fields per issue:
+  `history_hits`, `history_avg_score`, `history_conflict_rate`,
+  `history_similarity`, `history_similar_hits`, `history_similar_conflict_rate`
+
+The default guardrails file also supports a `default` bucket, used as fallback for
+categories without an explicit entry.
 
 When evidence is weak or contradictory for sensitive categories, severity can be
 automatically downgraded (for example `error -> warning`) to reduce false positives.

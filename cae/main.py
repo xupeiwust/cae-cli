@@ -1719,6 +1719,11 @@ def diagnose(
         "--guardrails",
         help="???????? JSON ????????????",
     ),
+    history_db: Optional[Path] = typer.Option(
+        None,
+        "--history-db",
+        help="???????? SQLite ???, ???????? issue ???????",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -1740,7 +1745,12 @@ def diagnose(
 
     使用 [bold]--ai[/bold] 启用 AI 深度诊断。
     """
-    from cae.ai.diagnose import build_diagnosis_summary, diagnosis_result_to_dict, diagnose_results
+    from cae.ai.diagnose import (
+        build_diagnosis_summary,
+        diagnosis_result_to_dict,
+        diagnose_results,
+        issue_to_dict,
+    )
 
     if not json_output:
         console.print()
@@ -1784,6 +1794,7 @@ def diagnose(
         inp_file=inp_file,
         stream=False,
         guardrails_path=guardrails,
+        history_db_path=history_db,
     )
 
     payload = None
@@ -1832,9 +1843,34 @@ def diagnose(
         for idx, action in enumerate(summary.get("action_items", []), 1):
             console.print(f"  建议动作 {idx}: {action}")
         for iss in result.issues[:15]:
+            issue_payload = issue_to_dict(iss)
             icon = "[red]X[/red]" if iss.severity == "error" else "[yellow]![/yellow]"
             priority_text = f"P{iss.priority}" if iss.priority is not None else "P?"
             console.print(f"  {icon} [{priority_text}] [{iss.category}] {iss.cause[:80]}")
+            evidence_items: list[str] = []
+            evidence_line = issue_payload.get("evidence_line")
+            if evidence_line:
+                evidence_items.append(f"line={evidence_line}")
+            evidence_score = issue_payload.get("evidence_score")
+            if evidence_score is not None:
+                evidence_items.append(f"score={float(evidence_score):.2f}")
+            support_count = issue_payload.get("evidence_support_count")
+            if support_count is not None:
+                evidence_items.append(f"support={int(support_count)}")
+            source_trust = issue_payload.get("evidence_source_trust")
+            if source_trust is not None:
+                evidence_items.append(f"trust={float(source_trust):.2f}")
+            history_hits = issue_payload.get("history_hits")
+            if history_hits is not None and int(history_hits) > 0:
+                evidence_items.append(f"hist={int(history_hits)}")
+            history_similarity = issue_payload.get("history_similarity")
+            if history_similarity is not None and float(history_similarity) > 0:
+                evidence_items.append(f"h-sim={float(history_similarity):.2f}")
+            if evidence_items:
+                console.print("     [dim]evidence: " + " | ".join(evidence_items) + "[/dim]")
+            evidence_conflict = issue_payload.get("evidence_conflict")
+            if evidence_conflict:
+                console.print(f"     [dim]evidence_conflict: {evidence_conflict}[/dim]")
             if iss.action:
                 console.print(f"     -> {iss.action}")
         console.print()
