@@ -13,7 +13,6 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
@@ -172,8 +171,6 @@ def _parse_elements(block, summary) -> tuple[int, dict]:
     count = 0
     etype_map: dict[str, int] = {}
     etype_param = block.get_param("TYPE") or ""
-    elset_name = block.get_param("ELSET") or "DEFAULT"
-
     for line in block.data_lines:
         if not line.strip() or line.startswith("**"):
             continue

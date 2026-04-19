@@ -10,7 +10,6 @@ CalculiX 中 *ELASTIC 用于定义弹性材料参数，支持温度依赖。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Sequence
 
 from cae.enums import ElasticType
 from cae._utils import f2s

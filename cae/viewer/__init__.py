@@ -5,6 +5,8 @@ when those packages are not installed.
 """
 from __future__ import annotations
 
+from cae.viewer.frd_parser import FrdData, FrdElement, FrdNodes, FrdResultStep, parse_frd
+
 __all__ = [
     # FRD parser (always available)
     "FrdData",
@@ -65,7 +67,3 @@ def __getattr__(name: str):
 
         return getattr(report, name)
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-# Always-available imports (no heavy dependencies)
-from cae.viewer.frd_parser import FrdData, FrdNodes, FrdElement, FrdResultStep, parse_frd

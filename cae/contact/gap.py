@@ -98,7 +98,7 @@ class Gap:
         lines = []
 
         # GAP 行
-        parts = [f"*GAP"]
+        parts = ["*GAP"]
         if self.name:
             parts.append(f"NAME={self.name}")
         if self.c0 is not None:

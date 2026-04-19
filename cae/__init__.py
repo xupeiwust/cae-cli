@@ -17,3 +17,11 @@ CAE-CLI: 轻量化 CAE 命令行工具
 """
 
 from cae.protocols import IKeyword, IStep, INodeSet, IElementSet, ISurface
+
+__all__ = [
+    "IKeyword",
+    "IStep",
+    "INodeSet",
+    "IElementSet",
+    "ISurface",
+]

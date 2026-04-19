@@ -5,7 +5,7 @@ CAE-CLI 枚举定义
 """
 from __future__ import annotations
 
-from enum import Enum, IntEnum, auto
+from enum import Enum, IntEnum
 
 
 # =============================================================================

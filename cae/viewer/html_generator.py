@@ -6,7 +6,6 @@ HTML 报告生成器
 from __future__ import annotations
 
 import base64
-import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
@@ -395,7 +394,6 @@ def build_report_from_renders(
     从 render_all() 的结果字典直接构建报告。
     这是最常用的入口，供 main.py 调用。
     """
-    from .pyvista_renderer import MeshInfo
 
     sections: list[ReportSection] = []
 

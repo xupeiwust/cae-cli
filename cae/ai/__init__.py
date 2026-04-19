@@ -14,6 +14,13 @@ CAE-CLI AI 模式模块
 """
 from __future__ import annotations
 
+from cae.ai.cad_generator import BeamParams, CadGenerator, CylinderParams, PlateParams
+from cae.ai.diagnose import diagnose_results
+from cae.ai.explain import explain_results
+from cae.ai.llm_client import LLMClient, LLMConfig
+from cae.ai.stream_handler import StreamHandler
+from cae.ai.suggest import suggest_results
+
 __all__ = [
     # LLM 客户端
     "LLMClient",
@@ -27,6 +34,9 @@ __all__ = [
     "Suggestion",
     "SuggestResult",
     "CadResult",
+    "BeamParams",
+    "CylinderParams",
+    "PlateParams",
     "ChainReasoningResult",
     # 函数
     "explain_results",
@@ -62,12 +72,3 @@ def __getattr__(name: str):
         from cae.ai.chain_reasoning import ChainReasoner
         return ChainReasoner
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-
-
-# 轻量级导入（无 heavy dependencies）
-from cae.ai.llm_client import LLMClient, LLMConfig
-from cae.ai.stream_handler import StreamHandler
-from cae.ai.explain import explain_results
-from cae.ai.diagnose import diagnose_results
-from cae.ai.suggest import suggest_results
-from cae.ai.cad_generator import CadGenerator, BeamParams, CylinderParams, PlateParams

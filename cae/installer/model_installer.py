@@ -10,7 +10,7 @@ import hashlib
 import os
 import platform
 import subprocess
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
@@ -212,7 +212,7 @@ class ModelInstaller:
 
         try:
             if progress_callback:
-                progress_callback(0.05, f"准备下载...")
+                progress_callback(0.05, "准备下载...")
 
             # 下载文件
             result = self._download_file(download_url, model_path, progress_callback)

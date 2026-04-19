@@ -11,7 +11,6 @@ Gmsh 网格划分封装
 from __future__ import annotations
 
 import logging
-import os
 import time
 from dataclasses import dataclass, field
 from enum import Enum

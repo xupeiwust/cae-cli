@@ -10,15 +10,11 @@
 """
 from __future__ import annotations
 
-import re
 from pathlib import Path
 from typing import Optional
-from unittest.mock import MagicMock
 
-import pytest
 
 from cae.ai.diagnose import (
-    DiagnosticIssue,
     _check_convergence,
     _check_element_quality,
     _check_frd_quality,
@@ -30,7 +26,6 @@ from cae.ai.diagnose import (
     _check_unit_consistency,
     _extract_yield_strength,
 )
-from cae.viewer.frd_parser import parse_frd
 
 
 # ------------------------------------------------------------------ #
@@ -178,13 +173,13 @@ def make_inp_file(
     lines.append("*MATERIAL, NAME=Mat-1\n")
     if material_type == "elastic":
         E_MPa = material_yield / 1e6
-        lines.append(f"*ELASTIC\n")
+        lines.append("*ELASTIC\n")
         lines.append(f"{E_MPa:.1f}, 0.3\n")
     elif material_type == "plastic":
-        lines.append(f"*DEFORMATION PLASTICITY\n")
+        lines.append("*DEFORMATION PLASTICITY\n")
         lines.append(f"{material_yield / 1e6:.1f}, 0.3, {material_yield / 1e6:.1f}, 14.0, 4.\n")
     elif material_type == "plastic_only":
-        lines.append(f"*PLASTIC\n")
+        lines.append("*PLASTIC\n")
         lines.append(f"{material_yield / 1e6:.1f}, 0.0\n")
 
     if nlgeom:

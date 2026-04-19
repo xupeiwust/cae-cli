@@ -11,7 +11,7 @@ CalculiX 中 *SURFACE BEHAVIOR,PRESSURE-OVERCLOSURE=... 用于定义
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Iterable, Optional, Any
+from typing import Optional, Any
 from collections.abc import Sequence
 
 from cae.enums import PressureOverclosure

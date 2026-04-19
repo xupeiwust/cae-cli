@@ -14,7 +14,7 @@ Step Keywords 载荷步关键词模块
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional, Any, Union, Sequence
+from typing import Optional, Union, Sequence
 
 from cae.enums import LoadOp, DloadType, CouplingType
 from cae._utils import f2s
@@ -254,7 +254,7 @@ class Dload:
             vector = mag[4:]
             norm_sq = sum(v * v for v in vector)
             if abs(norm_sq - 1.0) > 1e-7:
-                raise ValueError(f"CENTRIF 旋转轴向量必须归一化")
+                raise ValueError("CENTRIF 旋转轴向量必须归一化")
         elif lt in (DloadType.P1, DloadType.P2, DloadType.P3,
                     DloadType.P4, DloadType.P5, DloadType.P6):
             if len(mag) != 1:

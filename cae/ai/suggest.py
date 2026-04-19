@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Optional
 
 from .llm_client import LLMClient
-from .prompts import SUGGEST_SYSTEM, make_suggest_prompt
+from .prompts import make_suggest_prompt
 from .stream_handler import StreamHandler
 from .diagnose import DiagnoseResult, DiagnosticIssue
 from .explain import _find_frd, _extract_stats

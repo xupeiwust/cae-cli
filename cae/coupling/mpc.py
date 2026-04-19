@@ -9,7 +9,6 @@ CalculiX 中 *MPC 用于定义节点之间的约束关系。
 """
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass
 from typing import Sequence
 

@@ -19,7 +19,6 @@ CalculiX 中 *HYPERELASTIC 用于定义超弹性材料参数。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 from cae.enums import HyperElasticType
 from cae._utils import f2s

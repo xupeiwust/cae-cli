@@ -6,7 +6,6 @@ CalculiX 求解器安装器
 """
 from __future__ import annotations
 
-import os
 import platform
 import shutil
 import subprocess
@@ -15,8 +14,6 @@ import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
-from urllib.request import urlretrieve
-from urllib.error import URLError
 
 from cae.config import settings
 
@@ -178,7 +175,7 @@ class SolverInstaller:
                     except Exception as e:
                         last_error = str(e)
                         if progress_callback:
-                            progress_callback(0.02, f"下载失败，尝试下一个源...")
+                            progress_callback(0.02, "下载失败，尝试下一个源...")
                         continue
 
                 if not download_success:

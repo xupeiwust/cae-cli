@@ -5,7 +5,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, patch
 import numpy as np
 
 import pytest
@@ -16,16 +16,12 @@ from cae.mesh.gmsh_runner import (
     check_gmsh,
     get_gmsh_version,
     mesh_geometry,
-    SUPPORTED_GEO_FORMATS,
 )
 from cae.mesh.converter import (
-    ConvertResult,
     convert_mesh,
     msh_to_inp,
     inp_to_vtu,
     detect_format,
-    READABLE_FORMATS,
-    WRITABLE_FORMATS,
     _HAS_MESHIO,
 )
 

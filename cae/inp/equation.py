@@ -10,7 +10,7 @@ CalculiX 中 *EQUATION 用于定义节点自由度之间的线性方程约束。
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Sequence
+from typing import Sequence
 
 from cae._utils import f2s
 

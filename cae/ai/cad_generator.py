@@ -226,7 +226,7 @@ class CadGenerator:
         """
         try:
             import gmsh
-            import meshio
+            import meshio  # noqa: F401 - imported to validate optional dependency availability
         except ImportError:
             raise RuntimeError("导出 .inp 需要 gmsh 和 meshio，请运行: pip install gmsh meshio")
 

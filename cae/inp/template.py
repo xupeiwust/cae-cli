@@ -1,7 +1,7 @@
 """
 INP 模板生成模块 — 使用 Jinja2 渲染参数化 .inp 文件
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 import jinja2

@@ -159,7 +159,8 @@ class TestRenderDisplacement:
 
     def test_success_path(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_displacement
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         mock_mesh = _make_mock_pyvista()
         mock_plotter = MagicMock()
 
@@ -175,7 +176,8 @@ class TestRenderDisplacement:
 
     def test_no_disp_field(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_displacement
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         mock_mesh = _make_mock_pyvista(fields={"STRESS": np.zeros((8, 6))})
 
         with patch("cae.viewer.pyvista_renderer.load_result", return_value=mock_mesh):
@@ -193,7 +195,8 @@ class TestRenderVonMises:
 
     def test_success_path(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_von_mises
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         mock_mesh = _make_mock_pyvista()
         mock_plotter = MagicMock()
 
@@ -208,7 +211,8 @@ class TestRenderVonMises:
 
     def test_computes_vm_from_stress_tensor(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_von_mises
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         # 6分量应力字段，没有现成的 VonMises 字段
         stress_data = np.random.rand(8, 6) * 200
         mock_mesh = _make_mock_pyvista(fields={"STRESS_step1": stress_data})
@@ -226,7 +230,8 @@ class TestRenderVonMises:
 class TestRenderSlice:
     def test_success_path(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_slice
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         mock_mesh = _make_mock_pyvista()
 
         sliced = MagicMock()
@@ -246,9 +251,11 @@ class TestRenderSlice:
 
     def test_empty_slice_returns_error(self, tmp_path: Path):
         from cae.viewer.pyvista_renderer import render_slice
-        vtu = tmp_path / "job.vtu"; vtu.write_text("")
+        vtu = tmp_path / "job.vtu"
+        vtu.write_text("")
         mock_mesh = _make_mock_pyvista()
-        sliced = MagicMock(); sliced.n_points = 0
+        sliced = MagicMock()
+        sliced.n_points = 0
         mock_mesh.slice.return_value = sliced
 
         with patch("cae.viewer.pyvista_renderer.load_result", return_value=mock_mesh):

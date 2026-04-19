@@ -382,13 +382,11 @@ class LLMClient:
     @staticmethod
     def _find_python_with_llama() -> str:
         """查找含有 llama-cpp-python 的 Python 解释器路径。"""
+        import importlib.util
         import sys
 
-        try:
-            import llama_cpp
+        if importlib.util.find_spec("llama_cpp") is not None:
             return sys.executable
-        except ImportError:
-            pass
 
         # 搜索系统中可能的 Python 安装路径
         import shutil

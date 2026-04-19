@@ -16,14 +16,11 @@ import json
 import re
 import sys
 from pathlib import Path
-from typing import Optional
 
 # 添加项目根目录到路径
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 from cae.ai.reference_cases import (
-    CaseMetadata,
-    ClassificationTree,
     parse_inp_metadata,
 )
 
@@ -171,7 +168,7 @@ def extract_all_cases(test_dir: Path, output_path: Path) -> None:
             except Exception as e:
                 print(f"结果解析失败: {e}")
         else:
-            print(f"无参考文件 ", end="")
+            print("无参考文件 ", end="")
 
         # 存储
         cases[name] = meta.to_dict()

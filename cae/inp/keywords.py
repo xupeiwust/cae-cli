@@ -23,7 +23,10 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from pathlib import Path
-from typing import Any, Optional, TypeVar
+from typing import TYPE_CHECKING, Any, Optional, TypeVar
+
+if TYPE_CHECKING:
+    from cae.inp import Block
 
 __all__ = [
     "KeywordRegistry",
@@ -289,9 +292,7 @@ class KeywordRegistry:
         Returns:
             KeywordBase 子类实例，或 None（如果未找到定义）
         """
-        from cae.inp import Block
 
-        kw_clean = block.keyword_name.upper().lstrip("*")
         def_ = cls.get_def(block.keyword_name)
         if def_ is None:
             return None

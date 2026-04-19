@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 # 确保子进程使用 UTF-8 编码（避免 Windows GBK 编码问题）
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
@@ -32,7 +33,6 @@ from rich.console import Console
 from rich.panel import Panel
 from rich.progress import Progress, SpinnerColumn, TextColumn, TimeElapsedColumn
 from rich.table import Table
-from rich.text import Text
 from rich import box
 
 from cae.config import settings
@@ -81,7 +81,7 @@ def mesh_check(
         raise typer.Exit(1)
 
     summary = result.summary
-    console.print(f"  [green][OK][/green] 解析成功")
+    console.print("  [green][OK][/green] 解析成功")
     console.print(f"  节点: {summary.n_nodes:,}  单元: {summary.n_elements:,}")
     console.print(f"  节点集: {summary.n_nsets}  单元集: {summary.n_elsets}")
     console.print(f"  边界条件: {len(summary.boundaries)}  CLOAD: {len(summary.cloads)}")
@@ -100,7 +100,7 @@ def mesh_check(
     if browser:
         import webbrowser
         webbrowser.open(f"file://{out_path.resolve()}")
-        console.print(f"  已在浏览器中打开\n")
+        console.print("  已在浏览器中打开\n")
 
 
 # ------------------------------------------------------------------ #
@@ -110,8 +110,8 @@ def mesh_check(
 inp_app = typer.Typer(help="[bold]INP 文件解析与修改[/bold] — 解析、检查、修改 Abaqus/CalculiX .inp 文件")
 
 
-@inp_app.command()
-def info(
+@inp_app.command(name="info")
+def inp_info(
     inp_file: Path = typer.Argument(..., help=".inp 文件路径"),
 ) -> None:
     """[bold]显示 .inp 文件结构摘要[/bold]"""
@@ -540,7 +540,7 @@ def template(
 
         else:
             console.print(f"  [red]未知模板: {name}[/red]")
-            console.print(f"  可用模板: cantilever_beam, flat_plate")
+            console.print("  可用模板: cantilever_beam, flat_plate")
             console.print("  使用 --list 查看所有模板")
             return
 
@@ -550,7 +550,7 @@ def template(
             f.write(content)
 
         console.print(f"  [green]生成成功: {out_path}[/green]")
-        console.print(f"  使用 --params 查看所有参数")
+        console.print("  使用 --params 查看所有参数")
 
     except Exception as e:
         console.print(f"  [red]生成失败: {e}[/red]")
@@ -670,7 +670,7 @@ def model_pull(
         raise typer.Exit(code=1)
 
     console.print()
-    console.print(f"  [green]模型拉取成功！[/green]")
+    console.print("  [green]模型拉取成功！[/green]")
 
 
 @model_app.command(name="show")
@@ -769,7 +769,6 @@ def model_set(
 
 app.add_typer(model_app, name="model")
 
-import sys
 # Windows MSYS 环境：强制 stdout/stderr 使用 UTF-8
 if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -916,7 +915,7 @@ def solve(
         else:
             default_out = settings.default_output_dir / inp_file.stem
         raw_out = typer.prompt(
-            f"  输出目录",
+            "  输出目录",
             default=str(default_out),
         )
         output = Path(raw_out.strip())
@@ -988,7 +987,7 @@ def solve(
     # ---- 检查安装状态 ----
     if binary is None or not solver_instance.check_installation():
         console.print(
-            f"  [bold red]未找到有效的求解器[/bold red]\n"
+            "  [bold red]未找到有效的求解器[/bold red]\n"
             "  请检查路径是否正确。\n"
         )
         raise typer.Exit(1)
@@ -1086,7 +1085,6 @@ def solve(
 
 def _print_solve_result(result, inp_file: Path) -> None:
     """渲染求解结果摘要。"""
-    from cae.solvers.base import SolveResult
 
     if result.success:
         has_warnings = bool(result.warnings)
@@ -1371,7 +1369,7 @@ def mesh_gen(
         console.print()
     else:
         console.print(Panel(
-            f"[bold red]网格划分失败[/bold red]",
+            "[bold red]网格划分失败[/bold red]",
             border_style="red",
             expand=False,
         ))
@@ -1695,12 +1693,12 @@ def install(
     if solver_result and solver_result.success:
         solver_install_path = solver_result.install_dir or installer.get_install_dir()
         console.print()
-        console.print(f"  [green]CalculiX 安装成功[/green]")
+        console.print("  [green]CalculiX 安装成功[/green]")
         console.print(f"  路径: {solver_install_path}")
         console.print()
     elif solver_result:
         console.print()
-        console.print(f"  [red]CalculiX 安装失败[/red]")
+        console.print("  [red]CalculiX 安装失败[/red]")
         console.print(f"  {solver_result.error_message}")
         console.print()
     else:

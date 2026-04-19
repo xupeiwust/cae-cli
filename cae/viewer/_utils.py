@@ -145,7 +145,7 @@ def get_worst_principal_stress(stress: np.ndarray) -> np.ndarray:
         (N,) 的最不利主应力数组
     """
     principal, _ = get_principal_stresses(stress)
-    sigma1, sigma2, sigma3 = principal[:, 0], principal[:, 1], principal[:, 2]
+    sigma1, sigma3 = principal[:, 0], principal[:, 2]
 
     # 最不利 = max(|σ1|, |σ3|)，因为 σ1 ≥ σ2 ≥ σ3
     worst = np.copy(sigma1)

@@ -5,9 +5,8 @@
 """
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from unittest.mock import MagicMock, patch, mock_open
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -24,7 +23,15 @@ from cae.viewer.vtk_export import (
     VtkExportResult,
     frd_to_vtu,
 )
-from cae.viewer._utils import von_mises as _von_mises
+from cae.viewer._utils import (
+    get_max_shear_stress,
+    get_principal_shear_stresses,
+    get_principal_stresses,
+    get_stress_invariants,
+    get_worst_principal_stress,
+    von_mises,
+    von_mises as _von_mises,
+)
 
 
 # ================================================================== #
@@ -325,16 +332,6 @@ class TestIndexHtml:
 # ================================================================== #
 # 应力计算工具测试
 # ================================================================== #
-
-from cae.viewer._utils import (
-    von_mises,
-    get_principal_stresses,
-    get_principal_shear_stresses,
-    get_max_shear_stress,
-    get_worst_principal_stress,
-    get_stress_invariants,
-)
-
 
 class TestPrincipalStresses:
     """主应力计算测试"""

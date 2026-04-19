@@ -17,6 +17,10 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Optional
 
+from cae.inp.equation import Equation, EquationFactory, EquationTerm
+from cae.inp.model_builder import CantileverBeam, FlatPlate, ModelBuilder
+from cae.inp.step_keywords import Amplitude, Boundary, Cload, Coupling, Dload
+
 __all__ = [
     "Block",
     "InpParser",
@@ -125,7 +129,7 @@ class Block:
             return "(无数据)"
         n = len(self.data_lines)
         sample = self.data_lines[:3]
-        preview = ", ".join(l.strip()[:30] for l in sample)
+        preview = ", ".join(line.strip()[:30] for line in sample)
         return f"{n}行: {preview}" + (" ..." if n > 3 else "")
 
 
@@ -1016,7 +1020,3 @@ def _find_keyword_path(
 # ------------------------------------------------------------------ #
 # 载荷步关键词导入
 # ------------------------------------------------------------------ #
-
-from cae.inp.step_keywords import Amplitude, Cload, Dload, Boundary, Coupling
-from cae.inp.model_builder import ModelBuilder, CantileverBeam, FlatPlate
-from cae.inp.equation import Equation, EquationTerm, EquationFactory

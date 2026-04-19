@@ -27,8 +27,7 @@ from __future__ import annotations
 
 import pickle
 from dataclasses import dataclass, field
-from pathlib import Path
-from typing import Optional, Protocol, Sequence
+from typing import Optional, Sequence
 
 from cae.protocols import IKeyword, IStep
 from cae._utils import f2s
@@ -90,7 +89,7 @@ class CantileverBeam:
         """生成单元行"""
         lines = []
         n_elem = self.n_nodes - 1
-        lines.append(f"*ELEMENT, TYPE=B32, ELSET=EBEAM")
+        lines.append("*ELEMENT, TYPE=B32, ELSET=EBEAM")
         for i in range(n_elem):
             lines.append(f"{i + 1}, {i + 1}, {i + 2}")
         return lines
@@ -148,7 +147,7 @@ class CantileverBeam:
     def to_inp(self) -> str:
         """生成完整 INP 文件内容"""
         lines = []
-        lines.append(f"*HEADING")
+        lines.append("*HEADING")
         lines.append(self.title)
         lines.append("** ----------------------------------------------------------------")
         lines.extend(self._generate_material())
@@ -385,7 +384,7 @@ class ModelBuilder:
     def to_inp(self) -> str:
         """生成 INP 文件内容"""
         lines = []
-        lines.append(f"*HEADING")
+        lines.append("*HEADING")
         lines.append(self.title)
 
         # 节点

@@ -5,7 +5,6 @@
 """
 from __future__ import annotations
 
-from typing import Optional
 
 from .base import BaseSolver
 from .calculix import CalculixSolver

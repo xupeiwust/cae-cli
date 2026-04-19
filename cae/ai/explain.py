@@ -13,7 +13,7 @@ from typing import Optional
 
 from cae.viewer.frd_parser import FrdData, parse_frd
 from .llm_client import LLMClient
-from .prompts import EXPLAIN_SYSTEM, make_explain_prompt
+from .prompts import make_explain_prompt
 from .stream_handler import StreamHandler
 
 

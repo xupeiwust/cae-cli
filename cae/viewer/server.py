@@ -5,10 +5,8 @@ Uses ParaView Glance for WebGL-based 3D visualization.
 from __future__ import annotations
 
 import logging
-import mimetypes
 import socket
 from pathlib import Path
-from typing import Optional
 
 log = logging.getLogger(__name__)
 

@@ -250,7 +250,7 @@ class CalculixSolver(BaseSolver):
         """
         text = inp_file.read_text(encoding="utf-8", errors="replace")
         lines = text.splitlines()
-        upper_lines = [l.upper().strip() for l in lines]
+        upper_lines = [line.upper().strip() for line in lines]
 
         # 检查是否已有 *NODE FILE 和 *EL FILE（在 *STEP 内部）
         has_node_file = False
@@ -341,7 +341,6 @@ class CalculixSolver(BaseSolver):
             if is_wsl:
                 # 使用 WSL 运行
                 # 需要将路径转换为 WSL 路径格式
-                wsl_input = inp_dest.as_posix().replace("D:", "/mnt/d")
                 wsl_output = output_dir.as_posix().replace("D:", "/mnt/d")
                 cmd = ["wsl", "-e", "bash", "-c", f"cd {wsl_output} && ccx -i {job_name}"]
                 proc = subprocess.run(
