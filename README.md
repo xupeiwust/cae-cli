@@ -8,6 +8,7 @@
 <p align="center">
   <a href="https://github.com/yd5768365-hue/cae-cli">GitHub</a> |
   <a href="https://pypi.org/project/cae-cxx/">PyPI</a> |
+  <a href="DEVELOPMENT_LOG.md">Development Log</a> |
   <a href="https://github.com/yd5768365-hue/cae-cli/issues">Issues</a>
 </p>
 
