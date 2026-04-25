@@ -35,6 +35,11 @@ from typing import Optional
 
 from .llm_client import LLMClient
 from .prompts import make_diagnose_prompt_v2
+from .solver_output import (
+    collect_solver_text_sources,
+    extract_solver_convergence_metrics,
+    summarize_solver_run,
+)
 from .stream_handler import StreamHandler
 from .explain import _find_frd
 from .diagnosis_history import DiagnosisHistoryStore, IssueObservation
@@ -68,6 +73,7 @@ CATEGORY_TITLES = {
     "mesh_quality": "Mesh Quality Issue",
     "reference_comparison": "Reference Comparison Issue",
     "rigid_body_mode": "Rigid Body Mode Risk",
+    "solver_runtime": "Solver Runtime Issue",
     "stress_concentration": "Stress Concentration Issue",
     "unit_consistency": "Unit Consistency Issue",
     "user_element": "User Element Issue",
@@ -83,6 +89,7 @@ PRIORITY_BY_CATEGORY = {
     "rigid_body_mode": 2,
     "element_quality": 2,
     "limit_exceeded": 2,
+    "solver_runtime": 2,
     "unit_consistency": 3,
     "large_strain": 3,
     "material_yield": 3,
@@ -142,6 +149,7 @@ ISSUE_KEYWORDS_BY_CATEGORY = {
     "boundary_condition": ["zero pivot", "singular matrix", "underconstrained", "overconstrained"],
     "contact": ["contact", "slave surface", "master surface", "overclosure", "tied mpc"],
     "file_io": ["could not open file", "file name", "could not open"],
+    "solver_runtime": ["fatal error", "segmentation fault", "mpi abort", "exit failure", "aborted"],
     "user_element": ["user element", "umat", "user subroutine"],
     "limit_exceeded": ["increase nmpc", "increase nboun", "increase nk", "increase the dimension"],
     "dynamics": ["eigenvalue", "modal dynamic", "cyclic symmetric"],
@@ -245,6 +253,10 @@ class DiagnosisContext:
     frd_stats_loaded: bool = field(default=False, repr=False)
     convergence_metrics: list[dict] = field(default_factory=list, repr=False)
     convergence_metrics_loaded: bool = field(default=False, repr=False)
+    solver_text_sources: list[Path] = field(default_factory=list, repr=False)
+    solver_text_sources_loaded: bool = field(default=False, repr=False)
+    solver_run_summary: Optional[dict] = field(default=None, repr=False)
+    solver_run_summary_loaded: bool = field(default=False, repr=False)
     yield_strength_cache: dict[Path, Optional[float]] = field(default_factory=dict, repr=False)
 
 
@@ -309,6 +321,8 @@ EVIDENCE_SOURCE_TRUST_BY_EXT: dict[str, float] = {
     ".sta": 0.95,
     ".dat": 0.75,
     ".cvg": 0.70,
+    ".csv": 0.90,
+    ".log": 0.85,
     ".inp": 0.65,
 }
 DEFAULT_EVIDENCE_GUARDRAILS_BY_CATEGORY: dict[str, dict[str, float]] = {
@@ -702,6 +716,18 @@ def diagnosis_result_to_dict(
     top_issue = summary.get("top_issue")
     summary_export = dict(summary)
     summary_export["top_issue"] = issue_to_dict(top_issue) if isinstance(top_issue, DiagnosticIssue) else None
+    solver_run = summarize_solver_run(results_dir) if results_dir is not None else {
+        "solver": "unknown",
+        "status": "unknown",
+        "primary_log": None,
+        "status_reason": None,
+        "text_sources": [],
+        "artifacts": {
+            "input_files": [],
+            "log_files": [],
+            "result_files": [],
+        },
+    }
     convergence_files = [dict(item) for item in result.convergence_metrics]
     if not convergence_files and results_dir is not None and results_dir.exists():
         convergence_files = _extract_convergence_metrics(results_dir)
@@ -720,6 +746,7 @@ def diagnosis_result_to_dict(
         "level2_issues": [issue_to_dict(issue) for issue in result.level2_issues],
         "ai_diagnosis": result.level3_diagnosis,
         "similar_cases": [dict(case) for case in result.similar_cases],
+        "solver_run": solver_run,
         "convergence": {
             "summary": convergence_summary,
             "files": convergence_files,
@@ -728,6 +755,8 @@ def diagnosis_result_to_dict(
             "results_dir": str(results_dir) if results_dir is not None else None,
             "inp_file": str(inp_file) if inp_file is not None else None,
             "ai_enabled": ai_enabled,
+            "detected_solver": solver_run.get("solver"),
+            "solver_status": solver_run.get("status"),
         },
     }
 
@@ -817,16 +846,15 @@ def _build_issue_evidence_sources(
     sources: list[tuple[str, list[str]]] = []
     seen: set[str] = set()
 
-    for pattern in ("*.stderr", "*.sta", "*.dat", "*.cvg"):
-        for path in _glob_cached(results_dir, pattern, ctx=ctx):
-            key = str(path.resolve()).lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            try:
-                sources.append((path.name, _read_lines_cached(path, ctx=ctx)))
-            except OSError:
-                continue
+    for path in _get_solver_text_sources(results_dir, ctx=ctx):
+        key = str(path.resolve()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            sources.append((path.name, _read_lines_cached(path, ctx=ctx)))
+        except OSError:
+            continue
 
     if inp_file and inp_file.exists():
         key = str(inp_file.resolve()).lower()
@@ -1104,6 +1132,32 @@ def _iter_result_texts(
             except OSError:
                 continue
     return items
+
+
+def _get_solver_text_sources(
+    results_dir: Path,
+    *,
+    ctx: Optional[DiagnosisContext] = None,
+) -> list[Path]:
+    if ctx is None:
+        return collect_solver_text_sources(results_dir)
+    if not ctx.solver_text_sources_loaded:
+        ctx.solver_text_sources = collect_solver_text_sources(results_dir)
+        ctx.solver_text_sources_loaded = True
+    return ctx.solver_text_sources
+
+
+def _get_solver_run_summary(
+    results_dir: Path,
+    *,
+    ctx: Optional[DiagnosisContext] = None,
+) -> dict:
+    if ctx is None:
+        return summarize_solver_run(results_dir)
+    if not ctx.solver_run_summary_loaded:
+        ctx.solver_run_summary = summarize_solver_run(results_dir)
+        ctx.solver_run_summary_loaded = True
+    return ctx.solver_run_summary or {}
 
 
 def _get_inp_text(
@@ -1489,6 +1543,7 @@ def diagnose_results(
 
     try:
         # ========== Level 1: 鐟欏嫬鍨Λ鈧ù瀣剁礄閺冪姵娼禒鑸靛⒔鐞涘矉绱?=========
+        result.level1_issues.extend(_check_solver_run_status(results_dir, ctx=ctx))
         result.level1_issues.extend(_check_convergence(results_dir, ctx=ctx))
         result.level1_issues.extend(_check_time_increment_stagnation(results_dir, ctx=ctx))
         result.level1_issues.extend(_check_input_syntax(results_dir, ctx=ctx))
@@ -2120,6 +2175,52 @@ def _check_convergence(
                 break
 
     return _apply_convergence_contradiction_rules(issues, metrics)
+
+
+def _check_solver_run_status(
+    results_dir: Path,
+    ctx: Optional[DiagnosisContext] = None,
+) -> list[DiagnosticIssue]:
+    summary = _get_solver_run_summary(results_dir, ctx=ctx)
+    solver = str(summary.get("solver") or "unknown")
+    status = str(summary.get("status") or "unknown").lower()
+    reason = str(summary.get("status_reason") or "").strip()
+    location = summary.get("primary_log")
+
+    if solver in {"unknown", "calculix"}:
+        return []
+
+    if status == "failed":
+        message = reason or f"{solver} runtime failed before producing a valid solution."
+        return [
+            DiagnosticIssue(
+                severity="error",
+                category="solver_runtime",
+                message=message,
+                location=location,
+                suggestion=(
+                    f"Inspect {location or 'the runtime log'} and repair solver inputs, "
+                    "environment, or container command before trusting the outputs."
+                ),
+            )
+        ]
+
+    if status == "not_converged":
+        message = reason or f"{solver} finished without reaching its convergence target."
+        return [
+            DiagnosticIssue(
+                severity="warning",
+                category="convergence",
+                message=message,
+                location=location,
+                suggestion=(
+                    f"Review {location or 'the convergence log'}, then adjust iteration limits, "
+                    "time-step controls, or initialization before re-running."
+                ),
+            )
+        ]
+
+    return []
 
 def _check_time_increment_stagnation(
     results_dir: Path,
@@ -3669,86 +3770,8 @@ def _extract_convergence_metrics(
     *,
     ctx: Optional[DiagnosisContext] = None,
 ) -> list[dict]:
-    metrics: list[dict] = []
-    float_pattern = r"(-?[\d.]+(?:[eE][+-]?\d+)?)"
-
-    for sta_file, text in _iter_result_texts(results_dir, ("*.sta",), ctx=ctx):
-        try:
-            lines = text.strip().splitlines()
-
-            max_iterations = 0
-            final_residual: Optional[float] = None
-            final_force_ratio: Optional[float] = None
-            final_increment: Optional[float] = None
-            converged: Optional[str] = None
-            residual_series: list[float] = []
-            increment_series: list[float] = []
-
-            for line in lines[-200:]:
-                upper = line.upper()
-                if converged is None:
-                    if "NOT CONVERGED" in upper or "DID NOT CONVERGE" in upper or "FAILED" in upper:
-                        converged = "NOT CONVERGED"
-                    elif "CONVERGED" in upper:
-                        converged = "CONVERGED"
-
-                iter_match = re.search(r"iter[=\s]+(\d+)", line, re.IGNORECASE)
-                if iter_match:
-                    max_iterations = max(max_iterations, int(iter_match.group(1)))
-
-                resid_match = re.search(rf"resid[.=\s]+{float_pattern}", line, re.IGNORECASE)
-                if resid_match:
-                    final_residual = float(resid_match.group(1))
-                    residual_series.append(final_residual)
-
-                force_match = re.search(rf"force%?\s*=\s*{float_pattern}", line, re.IGNORECASE)
-                if force_match:
-                    final_force_ratio = float(force_match.group(1))
-
-                inc_match = re.search(rf"increment\s+size\s*=\s*{float_pattern}", line, re.IGNORECASE)
-                if inc_match:
-                    final_increment = float(inc_match.group(1))
-                    increment_series.append(final_increment)
-
-            if (
-                converged is not None
-                or max_iterations > 0
-                or final_residual is not None
-                or final_increment is not None
-            ):
-                residual_trend = _classify_series_trend(residual_series)
-                increment_trend = _classify_series_trend(
-                    increment_series,
-                    direction_words=("shrinking", "growing", "steady"),
-                )
-                metrics.append(
-                    {
-                        "file": sta_file.name,
-                        "status": converged,
-                        "max_iter": max_iterations if max_iterations > 0 else None,
-                        "final_residual": final_residual,
-                        "final_force_ratio": final_force_ratio,
-                        "final_increment": final_increment,
-                        "residual_trend": (
-                            residual_trend if residual_trend != "insufficient" else None
-                        ),
-                        "residual_span": (
-                            _format_series_bounds(residual_series) if residual_series else None
-                        ),
-                        "increment_trend": (
-                            increment_trend if increment_trend != "insufficient" else None
-                        ),
-                        "increment_span": (
-                            _format_series_bounds(increment_series) if increment_series else None
-                        ),
-                    }
-                )
-        except OSError:
-            continue
-        except ValueError:
-            continue
-
-    return metrics
+    del ctx
+    return extract_solver_convergence_metrics(results_dir)
 
 
 def _get_convergence_metrics(
@@ -3801,64 +3824,69 @@ def _get_stderr_snippets(
     issues: list,
     ctx: Optional[DiagnosisContext] = None,
 ) -> str:
-    """Extract stderr snippets relevant to current diagnosis issues."""
+    """Extract runtime snippets relevant to current diagnosis issues."""
     if not issues:
         return ""
 
     snippets: list[str] = []
-    stderr_file = None
-
-    stderr_files = _glob_cached(results_dir, "*.stderr", ctx=ctx)
-    if stderr_files:
-        stderr_file = stderr_files[0]
-
-    if stderr_file is None:
+    candidate_files = _get_solver_text_sources(results_dir, ctx=ctx)
+    if not candidate_files:
         return ""
 
+    preferred_suffixes = {".stderr", ".log"}
+    preferred = [path for path in candidate_files if path.suffix.lower() in preferred_suffixes]
+    search_files = preferred or candidate_files[:2]
+
     try:
-        text = _read_text_cached(stderr_file, ctx=ctx)
-        lines = text.splitlines()
-        lowered_lines = [line.lower() for line in lines]
-        used_ranges: set[tuple[int, int]] = set()
+        used_ranges: set[tuple[str, int, int]] = set()
 
-        for issue in normalize_issues(issues):
-            keywords = _issue_keywords(issue)
-            if not keywords:
-                continue
+        for source_file in search_files:
+            text = _read_text_cached(source_file, ctx=ctx)
+            lines = text.splitlines()
+            lowered_lines = [line.lower() for line in lines]
 
-            for i, line_lower in enumerate(lowered_lines):
-                if not any(kw in line_lower for kw in keywords):
+            for issue in normalize_issues(issues):
+                keywords = _issue_keywords(issue)
+                if not keywords:
                     continue
 
-                start = max(0, i - AI_SNIPPET_CONTEXT_RADIUS)
-                end = min(len(lines), i + AI_SNIPPET_CONTEXT_RADIUS + 1)
-                range_key = (start, end)
-                if range_key in used_ranges:
-                    continue
-                used_ranges.add(range_key)
+                for i, line_lower in enumerate(lowered_lines):
+                    if not any(kw in line_lower for kw in keywords):
+                        continue
 
-                snippet_lines = lines[start:end]
-                for j in range(len(snippet_lines)):
-                    if i - start == j:
-                        snippet_lines[j] = f">>> {snippet_lines[j]}"
-                    else:
-                        snippet_lines[j] = f"    {snippet_lines[j]}"
+                    start = max(0, i - AI_SNIPPET_CONTEXT_RADIUS)
+                    end = min(len(lines), i + AI_SNIPPET_CONTEXT_RADIUS + 1)
+                    range_key = (source_file.name, start, end)
+                    if range_key in used_ranges:
+                        continue
+                    used_ranges.add(range_key)
 
-                snippets.append(f"--- Match ({stderr_file.name} line {i + 1}) [{issue.category}] ---")
-                snippets.extend(snippet_lines)
-                snippets.append("")
+                    snippet_lines = lines[start:end]
+                    for j in range(len(snippet_lines)):
+                        if i - start == j:
+                            snippet_lines[j] = f">>> {snippet_lines[j]}"
+                        else:
+                            snippet_lines[j] = f"    {snippet_lines[j]}"
+
+                    snippets.append(f"--- Match ({source_file.name} line {i + 1}) [{issue.category}] ---")
+                    snippets.extend(snippet_lines)
+                    snippets.append("")
+
+                    if len(used_ranges) >= AI_MAX_SNIPPETS:
+                        break
+                    break
 
                 if len(used_ranges) >= AI_MAX_SNIPPETS:
                     break
-                break
 
             if len(used_ranges) >= AI_MAX_SNIPPETS:
                 break
 
         if not snippets:
-            fallback_lines = lines[: min(len(lines), 20)]
+            fallback_file = search_files[0]
+            fallback_lines = _read_text_cached(fallback_file, ctx=ctx).splitlines()[:20]
             if fallback_lines:
-                snippets.append(f"--- Fallback ({stderr_file.name}) ---")
+                snippets.append(f"--- Fallback ({fallback_file.name}) ---")
                 snippets.extend(f"    {line}" for line in fallback_lines)
 
     except OSError:

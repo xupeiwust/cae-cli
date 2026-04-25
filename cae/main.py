@@ -26,7 +26,7 @@ import sys
 os.environ.setdefault("PYTHONIOENCODING", "utf-8")
 
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import typer
 from rich.console import Console
@@ -37,6 +37,82 @@ from rich import box
 
 from cae.config import settings
 from cae.solvers.registry import get_solver, list_solvers
+
+
+def _format_list_preview(items: list[Any], limit: int = 3) -> str:
+    values = [str(item) for item in items if str(item).strip()]
+    if not values:
+        return "-"
+    preview = ", ".join(values[:limit])
+    if len(values) > limit:
+        preview += f" ... (+{len(values) - limit})"
+    return preview
+
+
+def _print_diagnosis_route_summary(payload: dict[str, Any]) -> None:
+    routing = payload.get("routing") if isinstance(payload.get("routing"), dict) else {}
+    if not routing:
+        return
+
+    post_route_step = (
+        routing.get("post_route_step")
+        if isinstance(routing.get("post_route_step"), dict)
+        else {}
+    )
+    action_context = (
+        routing.get("action_context")
+        if isinstance(routing.get("action_context"), dict)
+        else {}
+    )
+    solver_run_branch = (
+        post_route_step.get("solver_run_branch")
+        if isinstance(post_route_step.get("solver_run_branch"), dict)
+        else action_context.get("solver_run_branch")
+        if isinstance(action_context.get("solver_run_branch"), dict)
+        else {}
+    )
+    score_breakdown = (
+        post_route_step.get("branch_score_breakdown")
+        if isinstance(post_route_step.get("branch_score_breakdown"), dict)
+        else {}
+    )
+    matched_terms = [
+        str(item.get("term"))
+        for item in list(score_breakdown.get("matched_branch_terms", []))
+        if isinstance(item, dict) and str(item.get("term") or "").strip()
+    ]
+
+    console.print("  [bold cyan]Agent 路由[/bold cyan]")
+    console.print(
+        "  路线: "
+        f"[cyan]{routing.get('route', 'unknown')}[/cyan]  "
+        f"来源: [dim]{routing.get('decision_source', 'unknown')}[/dim]"
+    )
+    console.print(f"  下一步: {routing.get('recommended_next_action') or '-'}")
+    if solver_run_branch:
+        console.print(
+            "  细分分支: "
+            f"[cyan]{solver_run_branch.get('branch', '-')}[/cyan]  "
+            f"{solver_run_branch.get('action') or ''}"
+        )
+    if post_route_step:
+        console.print(
+            "  默认计划: "
+            f"[cyan]{post_route_step.get('selection_id') or '-'}[/cyan]  "
+            f"write={post_route_step.get('write_readiness') or '-'}"
+        )
+        reason = post_route_step.get("selection_reason")
+        if reason:
+            console.print(f"  选择原因: [dim]{reason}[/dim]")
+        if score_breakdown:
+            console.print(
+                "  选择评分: "
+                f"branch={score_breakdown.get('branch_score', 0)} "
+                f"base={score_breakdown.get('base_score', 0)} "
+                f"total={score_breakdown.get('total_score', 0)} "
+                f"terms={_format_list_preview(matched_terms)}"
+            )
+    console.print()
 
 # ------------------------------------------------------------------ #
 # mesh 命令组
@@ -333,8 +409,9 @@ def suggest(
     # AI client
     client = None
     if not no_ai:
-        from cae.ai.llm_client import LLMConfig
-        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        from cae.ai.llm_client import LLMConfig, resolve_ollama_model_name
+
+        config = LLMConfig(use_ollama=True, model_name=resolve_ollama_model_name())
         client = LLMClient(config=config)
         console.print("  AI 正在分析，请稍候...\n")
 
@@ -2185,6 +2262,11 @@ def diagnose(
         "--history-db",
         help="???????? SQLite ???, ???????? issue ???????",
     ),
+    model_name: Optional[str] = typer.Option(
+        None,
+        "--model-name",
+        help="AI model name (default: CAE_AI_MODEL or active_model).",
+    ),
     json_output: bool = typer.Option(
         False,
         "--json",
@@ -2227,6 +2309,7 @@ def diagnose(
         diagnose_results,
         issue_to_dict,
     )
+    from cae.mcp_server import attach_agent_routing_context
 
     if fix and no_fix:
         err_console.print("\n  [red]错误: --fix and --no-fix cannot be used together.[/red]\n")
@@ -2259,10 +2342,13 @@ def diagnose(
     # ========== Level 1 + 2: 规则检测 + 参考案例 ==========
     client = None
     if ai:
-        from cae.ai.llm_client import LLMConfig, LLMClient
-        config = LLMConfig(use_ollama=True, model_name="deepseek-r1:1.5b")
+        from cae.ai.llm_client import LLMConfig, LLMClient, resolve_ollama_model_name_with_source
+
+        resolved_model_name, model_source = resolve_ollama_model_name_with_source(model_name)
+        config = LLMConfig(use_ollama=True, model_name=resolved_model_name)
         client = LLMClient(config=config)
         if not json_output:
+            console.print(f"  [dim]AI model: {resolved_model_name} ({model_source})[/dim]")
             console.print("  [yellow]AI 深度诊断已启用[/yellow]\n")
     else:
         if not json_output:
@@ -2277,14 +2363,14 @@ def diagnose(
         history_db_path=history_db,
     )
 
-    payload = None
-    if json_out is not None or json_output:
-        payload = diagnosis_result_to_dict(
+    payload = attach_agent_routing_context(
+        diagnosis_result_to_dict(
             result,
             results_dir=results_dir,
             inp_file=inp_file,
             ai_enabled=ai,
         )
+    )
 
     if json_out is not None and payload is not None:
         json_out.parent.mkdir(parents=True, exist_ok=True)
@@ -2304,6 +2390,8 @@ def diagnose(
     if not result.success:
         err_console.print(f"\n  诊断失败: {result.error}\n")
         raise typer.Exit(1)
+
+    _print_diagnosis_route_summary(payload)
 
     # 显示规则检测结果
     if result.issues:

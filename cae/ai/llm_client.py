@@ -10,6 +10,7 @@ LLMClient — llama-cpp-python 接口封装
 """
 from __future__ import annotations
 
+import os
 import socket
 import subprocess
 import time
@@ -23,6 +24,31 @@ from cae.config import settings
 
 # 默认端口
 DEFAULT_PORT = 8080
+DEFAULT_OLLAMA_MODEL = "deepseek-r1:1.5b"
+MODEL_NAME_ENV = "CAE_AI_MODEL"
+
+
+def resolve_ollama_model_name_with_source(model_name: Optional[str] = None) -> tuple[str, str]:
+    """Resolve runtime Ollama model name and return (name, source)."""
+    explicit = (model_name or "").strip()
+    if explicit:
+        return explicit, "explicit"
+
+    env_value = os.getenv(MODEL_NAME_ENV, "").strip()
+    if env_value:
+        return env_value, "env"
+
+    active = (settings.active_model or "").strip()
+    if active:
+        return active, "settings"
+
+    return DEFAULT_OLLAMA_MODEL, "default"
+
+
+def resolve_ollama_model_name(model_name: Optional[str] = None) -> str:
+    """Resolve runtime Ollama model name with explicit/env/settings fallback."""
+    resolved_name, _ = resolve_ollama_model_name_with_source(model_name)
+    return resolved_name
 
 
 @dataclass
@@ -262,7 +288,7 @@ class LLMClient:
         temperature: float,
     ) -> str:
         """Ollama 后端补全。"""
-        model_name = self.config.model_name or "deepseek-r1:1.5b"
+        model_name = resolve_ollama_model_name(self.config.model_name)
         payload = {
             "model": model_name,
             "prompt": prompt,

@@ -108,6 +108,13 @@ Main commands:
 
 - `list` / `pull` / `show` / `delete` / `set`
 
+AI diagnose model resolution order:
+
+1. `--model-name` (explicit per run)
+2. `CAE_AI_MODEL` environment variable
+3. `cae model set` stored `active_model`
+4. default `deepseek-r1:1.5b`
+
 `cae docker` subcommands:
 
 - `catalog`: list built-in solver image aliases
@@ -140,6 +147,9 @@ cae mesh check mesh.inp
 
 # Enable deep AI diagnosis
 cae diagnose results/ --ai
+
+# Pin a specific AI model for this run (useful for fine-tuned A/B tests)
+cae diagnose results/ --ai --model-name cae-ft:v1
 
 # Export structured diagnosis JSON
 cae diagnose results/ --json

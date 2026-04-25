@@ -63,6 +63,9 @@ def test_diagnose_json_outputs_parseable_payload() -> None:
         assert "history_similar_hits" in payload["issues"][0]
         assert "history_similar_conflict_rate" in payload["issues"][0]
         assert payload["issues"][0]["evidence_score"] < 0.9
+        assert payload["routing"]["route"] == "convergence_tuning"
+        assert payload["agent"]["selected_route_execution"]["selection_reason"]
+        assert "branch_score_breakdown" in payload["routing"]["post_route_step"]
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 
@@ -135,6 +138,10 @@ def test_diagnose_text_output_includes_evidence_fields() -> None:
         assert re.search(r"support=\d+", output) is not None
         assert re.search(r"trust=\d+\.\d{2}", output) is not None
         assert "evidence_conflict:" in output
+        assert "Agent 路由" in output
+        assert "路线: convergence_tuning" in output
+        assert "选择原因:" in output
+        assert "选择评分:" in output
     finally:
         shutil.rmtree(workspace, ignore_errors=True)
 

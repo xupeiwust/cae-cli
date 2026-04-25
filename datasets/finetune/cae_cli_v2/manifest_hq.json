@@ -1,0 +1,33 @@
+{
+  "dataset_name": "cae_cli_finetune_v2_hq",
+  "hq_min_quality": 0.9,
+  "record_count": 282,
+  "split_counts": {
+    "test": 32,
+    "train": 215,
+    "val": 35
+  },
+  "task_type_counts": {
+    "capability_grounding": 1,
+    "fixture_route_mapping": 33,
+    "guarded_executor_decision": 2,
+    "guarded_executor_decision_augmented": 16,
+    "issue_key_extraction": 11,
+    "smoke_input_profiling": 5,
+    "smoke_input_profiling_augmented": 30,
+    "solver_route_decision": 4,
+    "solver_route_decision_augmented": 32,
+    "status_reason_routing": 12,
+    "status_reason_routing_augmented": 96,
+    "status_route_policy": 40
+  },
+  "source_group_counts": {
+    "development_log": 1,
+    "results_logs": 36,
+    "routing_policy": 40,
+    "solver_smoke_case": 35,
+    "tests_fixture": 44,
+    "tests_guarded_operations": 18,
+    "tests_status_reason": 108
+  }
+}
