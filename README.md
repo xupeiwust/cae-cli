@@ -112,6 +112,20 @@ AI 诊断模型优先级：`--model-name` > `CAE_AI_MODEL` 环境变量 > `cae m
 
 `cae-gui/` 提供基于 Tauri + Vue 3 的桌面应用，无需命令行即可完成 CAE 工作流。
 
+### 界面预览
+
+| 主界面 | 求解界面 |
+| --- | --- |
+| ![主界面](screenshots/main.png) | ![求解界面](screenshots/solve.png) |
+
+| 诊断界面 | 结果可视化 |
+| --- | --- |
+| ![诊断界面](screenshots/diagnose.png) | ![结果可视化](screenshots/viewer.png) |
+
+| 设置界面 | |
+| --- | --- |
+| ![设置界面](screenshots/settings.png) | |
+
 ### 技术栈
 
 - **前端**：Vue 3 + TypeScript + Vite + Tailwind CSS + Pinia
