@@ -67,6 +67,12 @@ def test_docker_image_catalog_resolves_alias() -> None:
     assert any(item["alias"] == "openfoam" for item in catalog)
     assert any(item["alias"] == "code-aster" for item in catalog)
     assert resolve_image_reference("calculix") == "unifem/calculix-desktop:latest"
+    assert resolve_image_reference("cae-cli") == "cae-cli:latest"
+    assert resolve_image_command("cae-cli", "model") == [
+        "/tmp/calculix/ccx_2.13_MT",
+        "-i",
+        "model",
+    ]
     assert resolve_image_command("calculix-parallelworks", "model") == [
         "/opt/ccx-215/src/ccx_2.15",
         "-i",

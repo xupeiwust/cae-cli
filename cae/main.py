@@ -15,7 +15,7 @@ CLI 框架：Typer + Rich
   cae test                 — CalculiX 官方测试集批量测试    （第四周）
 
 后续周次将补充：
-  cae install / cae explain / cae diagnose / cae suggest
+  cae explain / cae diagnose / cae suggest
 """
 from __future__ import annotations
 
@@ -2159,92 +2159,6 @@ def convert(
     else:
         err_console.print(f"\n  转换失败: {result.error}\n")
         raise typer.Exit(1)
-
-
-@app.command()
-def install(
-) -> None:
-    """
-    [bold]安装 CalculiX 求解器[/bold]
-
-    \b
-    示例：
-      cae install
-    """
-    from cae.installer.solver_installer import SolverInstaller
-
-    console.print()
-    console.print(Panel.fit("[bold cyan]cae install[/bold cyan] — 安装 CalculiX 求解器", border_style="cyan"))
-    console.print()
-
-    # ---- 安装 CalculiX ----
-    solver_result = None
-    solver_install_path = None
-    console.print("  [bold]安装 CalculiX 求解器[/bold]")
-
-    # 如果设置了工作目录，默认使用工作目录下的 solvers 目录
-    # 否则使用全局默认路径
-    if settings.workspace_solvers_dir:
-        default_path = str(settings.workspace_solvers_dir)
-        install_path = Path(default_path)
-        console.print(f"  使用工作目录: [cyan]{default_path}[/cyan]")
-    else:
-        default_path = str(Path.home() / ".cae-cli" / "solvers" / "calculix" / "bin")
-        raw_path = typer.prompt(
-            "  安装路径",
-            default=default_path,
-            show_default=True,
-        )
-        install_path = Path(raw_path.strip())
-
-        # 确保路径格式正确（如果是文件路径则取父目录）
-        if install_path.name == "ccx.exe" or ".exe" in install_path.name:
-            install_path = install_path.parent
-
-    installer = SolverInstaller(install_dir=install_path)
-
-    # 检查是否已安装
-    if installer.is_installed():
-        console.print(f"  CalculiX 已安装在: {installer.bin_dir}")
-        reinstall = typer.prompt("  是否重新安装？", default="n", show_default=True)
-        if reinstall.lower() != "y":
-            console.print("  跳过安装\n")
-        else:
-            console.print()
-            with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                          TimeElapsedColumn(), console=console) as progress:
-                task = progress.add_task("  正在安装...", total=None)
-
-                def _solver_progress(pct: float, msg: str) -> None:
-                    progress.update(task, description=f"  {msg}")
-
-                solver_result = installer.install(progress_callback=_solver_progress, force=True)
-    else:
-        console.print()
-        with Progress(SpinnerColumn(), TextColumn("{task.description}"),
-                      TimeElapsedColumn(), console=console) as progress:
-            task = progress.add_task("  正在安装...", total=None)
-
-            def _solver_progress(pct: float, msg: str) -> None:
-                progress.update(task, description=f"  {msg}")
-
-            solver_result = installer.install(progress_callback=_solver_progress)
-
-    if solver_result and solver_result.success:
-        solver_install_path = solver_result.install_dir or installer.get_install_dir()
-        console.print()
-        console.print("  [green]CalculiX 安装成功[/green]")
-        console.print(f"  路径: {solver_install_path}")
-        console.print()
-    elif solver_result:
-        console.print()
-        console.print("  [red]CalculiX 安装失败[/red]")
-        console.print(f"  {solver_result.error_message}")
-        console.print()
-    else:
-        console.print()
-
-    console.print("  现在可以运行 [bold]`cae solve`[/bold] 开始仿真\n")
 
 
 @app.command()

@@ -47,11 +47,10 @@ pip install "cae-cxx[report]"
 pip install "cae-cxx[mcp]"
 ```
 
-Install CalculiX:
+Install CalculiX manually:
 
-```bash
-cae install
-```
+1. Download and install CalculiX from [calculix.org](https://www.calculix.org/).
+2. Make sure `ccx` / `ccx.exe` is available in your `PATH`, or configure `solver_path` via `cae config`.
 
 ---
 
@@ -85,8 +84,6 @@ Main commands:
 - `cae info`: show configuration and version information
 - `cae view`: inspect simulation results in the browser
 - `cae convert`: manually convert `.frd -> .vtu`
-- `cae install`: install CalculiX
-- `cae ai-install`: install AI models
 - `cae diagnose`: diagnose simulation issues
 - `cae docker`: standalone Docker and containerized solver tools
 - `cae report`: generate a PDF report
@@ -209,6 +206,34 @@ Docker support is intentionally separate from the native solver command. Use
 `cae solve` for local/native CalculiX execution and `cae docker ...` for
 containerized workflows.
 
+To create an independent Docker Engine inside Ubuntu WSL for this project and
+pull the core CalculiX image, run from PowerShell:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\setup-cae-cli-docker-wsl.ps1
+```
+
+The reusable runtime definition is stored in `docker.yml`. If Docker is already
+available inside WSL or Linux, you can build the project runtime directly from
+the repository root:
+
+```bash
+docker compose -f docker.yml up --build cae-cli
+docker tag cae-cli:latest cae-cli:calculix
+```
+
+The Compose flow builds a local `cae-cli:latest` image from
+`docker/cae-cli/Dockerfile`, verifies the CalculiX executable, and keeps its
+Compose-owned resources separate from older manually created `cae-cli`
+containers or networks.
+The PowerShell setup script wraps the same Compose path after installing Docker
+Engine in WSL, and tags the default CalculiX runtime as
+`cae-cli:latest` / `cae-cli:calculix`.
+Use `-All` to also pull the larger optional solver images, including
+`parallelworks/calculix:v2.15_exo`.
+When Docker Hub is slow, pass mirrors with `-Mirrors`, for example
+`-Mirrors "https://dockerproxy.net,https://docker.1panel.live,https://docker.m.daocloud.io"`.
+
 On Windows, `cae docker status` probes native Docker first, then Docker installed
 inside WSL through `wsl -e docker`. When WSL Docker is selected, host paths are
 converted to `/mnt/<drive>/...` for volume mounts.
@@ -216,8 +241,11 @@ converted to `/mnt/<drive>/...` for volume mounts.
 Containerized CalculiX uses this command shape:
 
 ```bash
-cae docker pull calculix-parallelworks --set-default
+cae docker pull cae-cli --set-default
 cae docker calculix model.inp -o results/model-docker
+
+# Or pass the local runtime explicitly without changing config.
+cae docker calculix model.inp --image cae-cli -o results/model-docker
 ```
 
 Other open-source solvers are exposed through the shared Docker catalog and
@@ -383,6 +411,10 @@ cae-cli/
 |   |-- ai/                # Diagnosis and AI features
 |   |-- installer/         # Solver/model installation
 |   `-- config/            # Configuration management
+|-- cae-gui/              # Tauri + Vue desktop GUI
+|-- cae_cli_v2/           # Fine-tune dataset v2 (291 records)
+|-- cae_cli_v2_2000/      # Extended fine-tune dataset (2000 records)
+|-- scripts/              # Build, export, and setup scripts
 |-- tests/                # Tests
 `-- README.md
 ```
@@ -460,9 +492,86 @@ cae docker catalog
 cae docker recommend "CFD smoke test"
 ```
 
+Regenerate fine-tune datasets:
+
+```bash
+# Export v2 dataset (291 records)
+python scripts/export_finetune_dataset.py
+
+# Generate extended v2-2000 dataset (2000 records)
+python scripts/generate_2000_training_data.py
+```
+
 On Windows with Docker installed inside WSL, keep Docker running in the WSL
 distribution first, then use `cae docker status` from PowerShell to confirm that
 `cae-cli` can see it.
+
+---
+
+## Fine-tune Dataset
+
+`cae-cli` ships structured diagnostic fine-tune datasets for training CAE-specific language models.
+
+### v2 Dataset (291 records)
+
+Located in `cae_cli_v2/`, exported from project test fixtures, solver logs, and routing policies.
+
+```text
+cae_cli_v2/
+├── all.jsonl              # full rich records with metadata + messages
+├── train.jsonl            # train split (221)
+├── val.jsonl              # validation split (36)
+├── test.jsonl             # test split (34)
+├── train_hq.jsonl         # high-quality train (quality_score >= 0.9)
+├── manifest.json          # counts and quality filter metadata
+└── manifest_hq.json       # HQ subset counts
+```
+
+### v2-2000 Extended Dataset (2000 records)
+
+Located in `cae_cli_v2_2000/`, expanded with richer error scenarios, wrong-diagnosis corrections, evidence guardrail checks, risk scoring, and solver family detection.
+
+```text
+cae_cli_v2_2000/
+├── all.jsonl              # 2000 full records
+├── train.jsonl            # train split (~1525)
+├── val.jsonl              # validation split (~260)
+├── test.jsonl             # test split (~215)
+├── *_chat.jsonl           # chat-only format for common finetune toolchains
+├── *_hq.jsonl             # high-quality subset (quality_score >= 0.9, ~1485)
+└── manifest.json          # dataset manifest with split/task-type counts
+```
+
+**20 task types** including:
+
+| Task Type | Description | Records |
+| --- | --- | --- |
+| `status_reason_routing_augmented` | Map runtime status reasons to solver routes | 518 |
+| `evidence_guardrail_check` | Check evidence against guardrail thresholds | 367 |
+| `fixture_route_mapping` | Route fixture issues to diagnostic lanes | 269 |
+| `risk_score_calculation` | Calculate risk scores for diagnostic issues | 165 |
+| `solver_route_decision_augmented` | Augmented solver gate routing | 124 |
+| `guarded_executor_decision_augmented` | Evaluate guarded write eligibility | 104 |
+| `status_reason_routing` | Map status reasons to solver status | 62 |
+| `issue_key_extraction` | Extract diagnosis labels from INP+stderr | 61 |
+| `inp_keyword_validation` | Validate CalculiX INP keywords | 54 |
+| `wrong_diagnosis_correction` | Correct wrong diagnoses with explanations | 27 |
+| ... | (10 more types) | ... |
+
+**Key features:**
+
+- Both **correct** and **incorrect** diagnosis examples for contrastive training
+- Deterministic routing policies: `failed→runtime_remediation`, `not_converged→convergence_tuning`, `success→physics_diagnosis`, `unknown→evidence_expansion`
+- Multi-solver coverage: CalculiX, SU2, OpenFOAM, Code_Aster, Elmer
+- Guarded executor write-safety decisions with backup-first policies
+- Evidence guardrail thresholds with pass/fail outcomes
+- Risk scoring with category-aware severity weights
+
+Regenerate the extended dataset:
+
+```bash
+python scripts/generate_2000_training_data.py
+```
 
 ---
 

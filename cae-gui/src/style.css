@@ -1,0 +1,181 @@
+@import 'tailwindcss';
+
+:root {
+  color-scheme: dark;
+  --md-primary: #D0BCFF;
+  --md-on-primary: #381E72;
+  --md-primary-container: #4F378B;
+  --md-on-primary-container: #EADDFF;
+  --md-secondary: #CCC2DC;
+  --md-secondary-container: #4A4458;
+  --md-tertiary: #EFB8C8;
+  --md-surface: #141218;
+  --md-surface-container-lowest: #0F0D13;
+  --md-surface-container-low: #1D1B20;
+  --md-surface-container: #211F26;
+  --md-surface-container-high: #2B2930;
+  --md-surface-container-highest: #36343B;
+  --md-on-surface: #E6E0E9;
+  --md-on-surface-variant: #CAC4D0;
+  --md-outline: #938F99;
+  --md-outline-variant: #49454F;
+  --md-error: #F2B8B5;
+  --md-error-container: #8C1D18;
+  --md-success: #A8DAB5;
+  --md-warning: #E8C47C;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #app {
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  font-family: 'Segoe UI', 'HarmonyOS Sans', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  background: var(--md-surface);
+  color: var(--md-on-surface);
+}
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--md-outline-variant); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--md-outline); }
+
+[data-tauri-drag-region] { -webkit-user-select: none; user-select: none; }
+
+.fade-enter-active, .fade-leave-active { transition: opacity 0.15s ease; }
+.fade-enter-from, .fade-leave-to { opacity: 0; }
+
+.slide-enter-active, .slide-leave-active { transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1); }
+.slide-enter-from { opacity: 0; transform: translateX(8px); }
+.slide-leave-to { opacity: 0; transform: translateX(-8px); }
+
+.md-card {
+  background: var(--md-surface-container);
+  border-radius: 16px;
+  border: none;
+}
+
+.md-card-high {
+  background: var(--md-surface-container-high);
+  border-radius: 16px;
+}
+
+.md-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 16px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  cursor: pointer;
+  border: 1px solid var(--md-outline-variant);
+  background: transparent;
+  color: var(--md-on-surface-variant);
+}
+
+.md-chip:hover {
+  background: rgba(202, 196, 208, 0.08);
+}
+
+.md-chip-active {
+  background: var(--md-secondary-container);
+  color: var(--md-on-primary-container);
+  border-color: transparent;
+}
+
+.md-btn-filled {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--md-primary);
+  color: var(--md-on-primary);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-btn-filled:hover {
+  box-shadow: 0 1px 3px 1px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.md-btn-tonal {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  background: var(--md-secondary-container);
+  color: var(--md-on-primary-container);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-btn-tonal:hover {
+  box-shadow: 0 1px 3px 1px rgba(0,0,0,0.15), 0 1px 2px rgba(0,0,0,0.3);
+}
+
+.md-btn-outlined {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 24px;
+  border-radius: 20px;
+  font-size: 14px;
+  font-weight: 500;
+  background: transparent;
+  color: var(--md-primary);
+  border: 1px solid var(--md-outline);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.md-btn-outlined:hover {
+  background: rgba(208, 188, 255, 0.08);
+}
+
+.md-switch {
+  width: 52px;
+  height: 32px;
+  border-radius: 16px;
+  background: var(--md-surface-container-highest);
+  border: 2px solid var(--md-outline);
+  position: relative;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.md-switch-active {
+  background: var(--md-primary);
+  border-color: var(--md-primary);
+}
+
+.md-switch-thumb {
+  width: 24px;
+  height: 24px;
+  border-radius: 12px;
+  background: var(--md-outline);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: all 0.2s ease;
+}
+
+.md-switch-active .md-switch-thumb {
+  background: var(--md-on-primary);
+  left: 24px;
+}

@@ -86,11 +86,22 @@ Key files:
 
 ## Key Conventions
 
+- Codebase is **Chinese-language**: comments, docstrings, and some test filenames are in Chinese (e.g. `可视化模块单元测试.py`)
+- There is **no typecheck step** configured (no mypy/pyright in dev deps)
 - All keyword classes use dataclasses with `to_inp_lines()` method
 - Protocol interfaces (`IKeyword`, `IStep`) enable runtime type checking
 - Solver implementations inherit from `BaseSolver` and register in `registry.py`
 - AI features are optional (`[ai]` extra) to minimize dependencies
 - Windows UTF-8 encoding enforced via `PYTHONIOENCODING` environment variable
+- Config lives in `%APPDATA%/cae-cli` (via `platformdirs`) on Windows
+- WSL Docker: `cae docker status` probes native Docker first, then WSL Docker via `wsl -e docker`; host paths are converted to `/mnt/<drive>/...` for volume mounts
+
+## AI Model Resolution Order (for diagnose)
+
+1. `--model-name` CLI flag (explicit per run)
+2. `CAE_AI_MODEL` environment variable
+3. `cae model set` stored `active_model`
+4. default `deepseek-r1:1.5b`
 
 ## Testing
 

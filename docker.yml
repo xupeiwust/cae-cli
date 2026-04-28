@@ -1,0 +1,19 @@
+name: cae-cli
+
+services:
+  cae-cli:
+    build:
+      context: .
+      dockerfile: docker/cae-cli/Dockerfile
+    image: cae-cli:latest
+    working_dir: /work
+    volumes:
+      - work:/work
+    command:
+      - bash
+      - -lc
+      - /tmp/calculix/ccx_2.13_MT -v || true
+    restart: "no"
+
+volumes:
+  work:

@@ -47,11 +47,11 @@ def get_platform() -> str:
 def get_archive_name(platform_name: str) -> str:
     """获取对应平台的压缩包名称"""
     names = {
-        "windows": "calculix_2.23_4win.zip",
+        "windows": "CalculiX-Portable.zip",
         "linux": "ccx_linux.tar.gz",
         "macos": "ccx_macos.tar.gz",
     }
-    return names.get(platform_name, "calculix_2.23_4win.zip")
+    return names.get(platform_name, "CalculiX-Portable.zip")
 
 
 class SolverInstaller:
@@ -156,7 +156,8 @@ class SolverInstaller:
             archive_path = local_archive
             download_urls = None
         else:
-            archive_path = self.cae_home / self.archive_name
+            archive_path = self.solvers_dir / self.archive_name
+            archive_path.parent.mkdir(parents=True, exist_ok=True)
             download_urls = self._get_download_urls()
 
         try:
@@ -185,6 +186,8 @@ class SolverInstaller:
                 progress_callback(0.65, "正在解压...")
 
             # 解压
+            self._validate_archive(archive_path)
+
             self._extract_archive(archive_path)
 
             if progress_callback:
@@ -225,16 +228,53 @@ class SolverInstaller:
             )
 
     def _download_file(self, url: str, dest: Path, progress_callback: Optional[callable] = None) -> None:
-        """下载文件，失败时抛出异常"""
-        # 使用 curl 下载（更可靠）
+        """????????????"""
+        dest.parent.mkdir(parents=True, exist_ok=True)
         result = subprocess.run(
-            ["curl", "-L", "-o", str(dest), url, "--progress-bar", "--connect-timeout", "30", "-m", "300"],
+            [
+                "curl",
+                "-fL",
+                "-o",
+                str(dest),
+                url,
+                "--progress-bar",
+                "--connect-timeout",
+                "30",
+                "--retry",
+                "3",
+                "--retry-delay",
+                "2",
+                "--retry-all-errors",
+                "-m",
+                "1800",
+            ],
             capture_output=True,
             text=True,
-            timeout=360,
+            timeout=1860,
         )
         if result.returncode != 0:
-            raise RuntimeError(f"curl 下载失败: {result.stderr.strip()[:200]}")
+            err = (result.stderr or result.stdout or "").strip()
+            if dest.exists() and dest.stat().st_size == 0:
+                dest.unlink(missing_ok=True)
+            raise RuntimeError(f"curl download failed: {err[:500]}")
+
+    def _validate_archive(self, archive_path: Path) -> None:
+        """Basic archive sanity checks before extraction."""
+        if not archive_path.exists():
+            raise RuntimeError(f"downloaded file not found: {archive_path}")
+        if archive_path.stat().st_size < 1024:
+            raise RuntimeError(
+                f"downloaded file is too small (likely an error page): {archive_path.stat().st_size} bytes"
+            )
+
+        if self.platform == "windows":
+            if not zipfile.is_zipfile(archive_path):
+                head = archive_path.read_bytes()[:120].decode("utf-8", errors="replace")
+                raise RuntimeError(f"download payload is not a valid zip archive: {head!r}")
+        else:
+            if not tarfile.is_tarfile(archive_path):
+                head = archive_path.read_bytes()[:120].decode("utf-8", errors="replace")
+                raise RuntimeError(f"download payload is not a valid tar.gz archive: {head!r}")
 
     def _extract_archive(self, archive_path: Path) -> None:
         """解压压缩包"""
@@ -321,7 +361,7 @@ class SolverInstaller:
         if not builtin_path:
             return InstallResult(
                 success=False,
-                error_message="未找到内置求解器，请先运行 'cae install' 安装"
+                error_message="未找到内置求解器，请手动安装 CalculiX 并配置 solver_path"
             )
 
         try:

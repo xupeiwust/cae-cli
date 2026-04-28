@@ -457,3 +457,103 @@ README-only change; no code behavior changed.
 
 - 后续可以增加 `CONTRIBUTING.md`，把提交规范、测试范围、Docker/WSL 注意事项和
   PR 检查流程独立出来，README 只保留最短上手路径。
+
+## [2026-04-25] cae-cli-docker-from-zero-bootstrap
+
+### 变更
+
+- 从零搭建了本机独立 Docker 求解环境：
+  - WSL 发行版：`Ubuntu`，WSL2
+  - Ubuntu：`24.04.4 LTS (Noble Numbat)`
+  - Docker Engine：`29.4.1`
+  - Docker 后端：`wsl -e docker`
+- 新增 `scripts/install-docker-wsl.sh`：
+  - 安装 Docker Engine 官方 apt 源与核心组件；
+  - 配置可选 registry mirrors；
+  - 创建 `cae-cli` network、`cae-cli-work` volume、`cae-cli` container；
+  - 拉取核心 CalculiX 镜像；
+  - 把 `unifem/calculix-desktop:latest` 标记为 `cae-cli:latest` / `cae-cli:calculix`。
+- 新增 `scripts/setup-cae-cli-docker-wsl.ps1`，作为 Windows PowerShell 一键入口。
+- README 增加独立 WSL Docker 初始化说明，并记录 `-Mirrors` 参数示例：
+  `https://dockerproxy.net,https://docker.1panel.live,https://docker.m.daocloud.io`。
+- 发现 `unifem/calculix-desktop:latest` 内部的 `ccx` 不在 PATH 中，真实命令为
+  `/tmp/calculix/ccx_2.13_MT`。
+- 更新 `cae/docker/images.py`：
+  - `calculix` / `calculix-desktop` 使用真实可执行文件路径；
+  - 新增本地别名 `cae-cli -> cae-cli:latest`。
+- 更新 Docker catalog 测试，锁定 `cae-cli` 别名和命令解析行为。
+- 执行 `cae docker pull cae-cli --set-default`，把 `cae-cli:latest` 保存为默认
+  Docker CalculiX 镜像。
+- 保持默认初始化只拉核心 `cae-cli` 运行时；`parallelworks/calculix:v2.15_exo`
+  因大层下载出现 `unexpected EOF`，改为 `-All` 可选路径，不再阻塞主线。
+
+### 验证
+
+```text
+venv\Scripts\cae.exe docker status
+venv\Scripts\cae.exe docker images
+venv\Scripts\cae.exe docker calculix examples\simple_beam.inp --image cae-cli -o .cae-workspace\docker-simple-beam --timeout 300
+venv\Scripts\cae.exe docker calculix examples\simple_cantilever.inp -o .cae-workspace\docker-simple-cantilever --timeout 300
+venv\Scripts\python -m pytest -q
+venv\Scripts\python -m ruff check cae tests
+```
+
+结果：
+
+```text
+Docker backend: wsl
+Docker version: 29.4.1
+Local images: hello-world:latest, unifem/calculix-desktop:latest, cae-cli:latest, cae-cli:calculix
+simple_beam: generated .frd/.dat/.sta/.stderr
+simple_cantilever: generated .frd/.dat/.sta/.stderr
+162 passed
+ruff: All checks passed
+```
+
+### 下一步
+
+- 后续不要让超大公共镜像阻塞默认 Docker 初始化；默认路径保持核心 `cae-cli`
+  CalculiX runtime。
+- 单独处理 `parallelworks/calculix:v2.15_exo` 的大层下载问题，必要时换源、
+  换镜像或改为明确的 optional pull。
+- 将 Docker baseline 继续接到 preflight、solver recommendation、日志提取和
+  物理诊断可信度分析。
+
+## [2026-04-25] docker-compose-runtime-onboarding
+
+### Changed
+
+- Added `docker.yml` as the reusable one-step Docker Compose entry for the
+  local `cae-cli` CalculiX runtime.
+- Added `docker/cae-cli/Dockerfile` to wrap
+  `unifem/calculix-desktop:latest`, verify `/tmp/calculix/ccx_2.13_MT`, and
+  expose a stable `ccx` symlink. The default container command now prints the
+  CalculiX version and exits successfully, avoiding a false failed smoke run.
+- Updated the WSL installer so the successful setup path now builds through
+  `docker.yml` when the repository is available, then tags
+  `cae-cli:latest` as `cae-cli:calculix`.
+- Avoided binding the Compose file to the old manually-created `cae-cli`
+  container/network names. Compose now owns its own default resources, which
+  prevents label conflicts on machines that already tried the manual setup.
+- Updated README Docker workflow notes with the direct Compose command and the
+  Windows PowerShell wrapper path.
+
+### Verification
+
+```text
+wsl -d Ubuntu -u root -e bash -lc "cd /mnt/e/cae-cli && docker compose -f docker.yml config"
+wsl -d Ubuntu -u root -e bash -lc "cd /mnt/e/cae-cli && docker compose -f docker.yml up --build --remove-orphans cae-cli"
+venv\Scripts\cae.exe docker calculix examples\simple_beam.inp --image cae-cli -o .cae-workspace\docker-compose-simple-beam --timeout 300
+venv\Scripts\python -m pytest -q
+venv\Scripts\python -m ruff check cae tests
+```
+
+Result:
+
+```text
+cae-cli:latest built successfully
+cae-cli-cae-cli-1 printed: This is Version 2.13
+simple_beam generated .frd/.dat/.sta/.stderr
+162 passed
+ruff: All checks passed
+```

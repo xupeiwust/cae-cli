@@ -18,14 +18,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator, Optional
 
-import requests
-
 from cae.config import settings
 
 # 默认端口
 DEFAULT_PORT = 8080
 DEFAULT_OLLAMA_MODEL = "deepseek-r1:1.5b"
 MODEL_NAME_ENV = "CAE_AI_MODEL"
+
+
+def _import_requests():
+    try:
+        import requests
+    except ImportError as exc:
+        raise RuntimeError(
+            "requests is required for HTTP-backed AI inference. "
+            "Install it with `pip install \"cae-cxx[ai]\"`."
+        ) from exc
+    return requests
 
 
 def resolve_ollama_model_name_with_source(model_name: Optional[str] = None) -> tuple[str, str]:
@@ -100,7 +109,8 @@ class LLMClient:
         model_name = self.config.model_name or settings.active_model
         if not model_name:
             raise RuntimeError(
-                "未设置 AI 模型。请先运行 `cae install --model <name>` 安装并激活模型，"
+                "未设置 AI 模型。请先运行 `cae model pull <name>` 下载模型，"
+                "再运行 `cae model set <name>` 激活，"
                 "或设置 settings.active_model。"
             )
 
@@ -121,7 +131,7 @@ class LLMClient:
         if not model_path.exists():
             raise FileNotFoundError(
                 f"模型文件不存在: {model_path}\n"
-                f"请运行 `cae install --model <name>` 下载模型。"
+                f"请运行 `cae model pull <name>` 下载模型。"
             )
 
         if self.config.use_server:
@@ -272,6 +282,7 @@ class LLMClient:
             "stream": stream,
         }
 
+        requests = _import_requests()
         resp = requests.post(
             f"{self._base_url}/completion",
             json=payload,
@@ -299,6 +310,7 @@ class LLMClient:
             "stream": False,
         }
 
+        requests = _import_requests()
         resp = requests.post(self._ollama_url, json=payload, timeout=max_tokens * 3)
         resp.raise_for_status()
         data = resp.json()
@@ -377,6 +389,7 @@ class LLMClient:
             "stream": True,
         }
 
+        requests = _import_requests()
         resp = requests.post(
             f"{self._base_url}/completion",
             json=payload,

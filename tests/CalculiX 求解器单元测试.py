@@ -225,7 +225,7 @@ class TestSolveWithMock:
             result = solver.solve(sample_inp, tmp_path / "results")
 
         assert result.success is False
-        assert "cae install" in (result.error_message or "")
+        assert "手动安装 CalculiX" in (result.error_message or "")
 
     def test_warnings_collected(
         self, solver: CalculixSolver, sample_inp: Path, tmp_path: Path

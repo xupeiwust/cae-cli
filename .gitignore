@@ -3,6 +3,7 @@ venv/
 .venv/
 .pytest_cache/
 .ruff_cache/
+.tmp/
 __pycache__/
 *.py[cod]
 *$py.class
@@ -50,6 +51,7 @@ models/
 
 # cae-cli data (user-specific)
 .cae-cli/
+.cae-workspace/
 
 # Build outputs
 release/
@@ -57,3 +59,11 @@ release/
 # Test scratch directories
 tests/.tmp_*/
 tests/pytest-cache-files-*/
+
+# GUI node_modules and build
+cae-gui/node_modules/
+cae-gui/dist/
+
+# Large training data archives
+cae_cli_v2/
+cae_cli_v2_2000/

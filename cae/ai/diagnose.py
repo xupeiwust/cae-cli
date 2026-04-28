@@ -2835,7 +2835,7 @@ def _check_inp_file_quality(
                 severity="warning",
                 category="material",
                 message=msg,
-                location=f"{inp_file.name} 鐞?{line_nums[0]}",
+                location=f"{inp_file.name} line {line_nums[0]}",
                 suggestion=suggestion,
             ))
 
@@ -2844,9 +2844,9 @@ def _check_inp_file_quality(
         issues.append(DiagnosticIssue(
             severity="warning",
             category="material",
-            message="濡偓濞村鍩岄弶鎰灐鐎规矮绠熸担鍡欏繁鐏?*SOLID SECTION閿涘本娼楅弬娆忓讲閼宠姤婀崗瀹犱粓閸掓澘宕熼崗?",
+            message="Material definition exists but no *SOLID SECTION card was found.",
             location=inp_file.name,
-            suggestion="閸?*SOLID SECTION 娑擃厽瀵氱€?ELNAME=閺夋劖鏋￠崥宥囆為敍宀€鈥樻穱婵囨綏閺傛瑥鐫橀幀褍鍙ч懕鏂垮煂閸楁洖鍘撻梿?",
+            suggestion="Add a *SOLID SECTION card that references the element set and material name.",
         ))
 
     # ===== 濡偓閺?閿涙氨宸辩亸鎴ｇ珶閻ｅ本娼禒?=====
@@ -2854,9 +2854,9 @@ def _check_inp_file_quality(
         issues.append(DiagnosticIssue(
             severity="error",
             category="boundary_condition",
-            message="INP 閺傚洣娆㈡稉顓熸弓閹垫儳鍩?*BOUNDARY 鐎规矮绠?",
+            message="INP file does not contain an active *BOUNDARY card.",
             location=inp_file.name,
-            suggestion="缂佹挻鐎箛鍛淬€忛張澶庣珶閻ｅ本娼禒鑸靛閼宠姤鐪扮憴锝冣偓鍌涘潑閸?*BOUNDARY 缁撅附娼担宥囆╅崚鍡涘櫤閿涘牆娴愮€规氨顏崗銊у閺夌喐鍨ㄧ€靛湱袨鏉堝湱鏅敍?",
+            suggestion="Add appropriate constraints with *BOUNDARY to remove rigid body motion before solving.",
         ))
 
     # ===== 濡偓閺?閿涙氨宸辩亸鎴濆瀻閺嬫劖顒?=====
@@ -2864,9 +2864,9 @@ def _check_inp_file_quality(
         issues.append(DiagnosticIssue(
             severity="error",
             category="input_syntax",
-            message="INP 閺傚洣娆㈡稉顓熸弓閹垫儳鍩?*STEP 鐎规矮绠?",
+            message="INP file does not contain an active *STEP card.",
             location=inp_file.name,
-            suggestion="韫囧懘銆忕€规矮绠熼懛鍐茬毌娑撯偓娑?*STEP 閸掑棙鐎藉銉ｂ偓鍌涘潑閸?*STATIC閿涘牓娼ら崝娑樺瀻閺嬫劧绱氶幋?*FREQUENCY閿涘牊膩閹礁鍨庨弸鎰剁礆缁?",
+            suggestion="Add a valid analysis step, for example *STEP followed by *STATIC and a matching *END STEP.",
         ))
     else:
         active_step_count = sum(1 for line in lines if line.strip().upper().startswith("*STEP"))

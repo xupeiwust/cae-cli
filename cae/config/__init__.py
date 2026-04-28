@@ -172,7 +172,7 @@ class Settings:
         # 保存配置
         self.workspace_path = workspace_path
         self.set("default_output_dir", str(output_dir))
-        self.solver_path = str(solvers_dir / "ccx")
+        self.solver_path = str(solvers_dir / "bin")
 
     def __repr__(self) -> str:  # pragma: no cover
         return (

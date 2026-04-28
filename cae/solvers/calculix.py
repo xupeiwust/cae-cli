@@ -5,7 +5,7 @@ CalculiX 求解器实现
 
 二进制查找优先级：
   1. 用户配置的求解器路径
-  2. ~/.local/share/cae-cli/solvers/calculix/ccx  （cae install 安装的）
+  2. ~/.local/share/cae-cli/solvers/calculix/ccx  （本地安装目录）
   3. 项目内置的 ccx.exe（独立运行版本，带 DLL）
   4. 系统 PATH 中的 ccx
   5. WSL 中的 ccx（如果可用）
@@ -99,22 +99,24 @@ class CalculixSolver(BaseSolver):
                 return user_path.resolve()
             # 如果是目录，查找 ccx.exe
             for ccx_name in ["ccx.exe", "ccx"]:
-                ccx_path = user_path / ccx_name
-                if ccx_path.is_file():
-                    return ccx_path.resolve()
+                for base in (user_path, user_path / "bin"):
+                    ccx_path = base / ccx_name
+                    if ccx_path.is_file():
+                        return ccx_path.resolve()
 
         # 0.5. 工作目录下的求解器（workspace/solvers/ccx）
         ws_solver = settings.workspace_solver_path
         if ws_solver:
             for ccx_name in ["ccx.exe", "ccx"]:
-                ccx_path = ws_solver / ccx_name
-                if ccx_path.is_file():
-                    return ccx_path.resolve()
+                for base in (ws_solver, ws_solver / "bin"):
+                    ccx_path = base / ccx_name
+                    if ccx_path.is_file():
+                        return ccx_path.resolve()
             # 也检查 workspace/solvers/ccx.exe 直接
             if ws_solver.is_file():
                 return ws_solver.resolve()
 
-        # 1. cae install 安装的捆绑二进制（~/.cae-cli/solvers/calculix/bin/）
+        # 1. 本地安装目录下的捆绑二进制（~/.cae-cli/solvers/calculix/bin/）
         for candidate in [
             settings.solvers_dir / "calculix" / "bin" / "ccx",
             settings.solvers_dir / "calculix" / "bin" / "ccx.exe",  # Windows
@@ -213,7 +215,7 @@ class CalculixSolver(BaseSolver):
         """添加 DLL 目录到 PATH（ccx.exe 需要这些 DLL）"""
         import os
 
-        # 1. 检查 cae install 安装的目录 (~/.cae-cli/solvers/calculix/bin/)
+        # 1. 检查本地安装目录 (~/.cae-cli/solvers/calculix/bin/)
         install_bin_dir = settings.solvers_dir / "calculix" / "bin"
         if install_bin_dir.exists():
             current_path = os.environ.get("PATH", "")
@@ -309,7 +311,7 @@ class CalculixSolver(BaseSolver):
             return self._error_result(
                 output_dir,
                 "找不到 CalculiX 可执行文件。\n"
-                "请运行 `cae install` 安装，或手动安装后确保 `ccx` 在 PATH 中。",
+                "请手动安装 CalculiX，并通过 `cae config` 设置 `solver_path`，或确保 `ccx` 在 PATH 中。",
             )
 
         ok, msg = self.validate_input(inp_file)
@@ -352,7 +354,7 @@ class CalculixSolver(BaseSolver):
                 )
             else:
                 # 检查 ccx 安装位置
-                # 1. cae install 安装的目录 (~/.cae-cli/solvers/calculix/bin/)
+                # 1. 本地安装目录 (~/.cae-cli/solvers/calculix/bin/)
                 install_bin_dir = (settings.solvers_dir / "calculix" / "bin").resolve()
 
                 # 2. 项目本地的 ccx.exe 目录
