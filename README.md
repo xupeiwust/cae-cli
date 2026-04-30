@@ -95,6 +95,7 @@ cae report results/
 | `cae inp` | 解析与修改 INP 文件 |
 | `cae mesh` | 网格工具 |
 | `cae model` | 管理本地 Ollama 模型 |
+| `cae gui snapshot` | 输出桌面端使用的真实项目快照 |
 | `cae config` | 管理工作区配置 |
 | `cae-mcp` | 运行 MCP 服务器 |
 
@@ -108,9 +109,17 @@ AI 诊断模型优先级：`--model-name` > `CAE_AI_MODEL` 环境变量 > `cae m
 
 ---
 
-## 桌面 GUI
+## 桌面版
 
-`cae-gui/` 提供基于 Tauri + Vue 3 的桌面应用，无需命令行即可完成 CAE 工作流。
+`cae-gui/` 提供基于 Tauri + Vue 3 的 Windows 桌面应用。桌面端不是静态演示页，而是通过 Tauri Shell 调用本机 `cae` CLI，并读取 `cae gui snapshot --json` 生成的真实项目状态。
+
+当前桌面版的核心定位是 **AI 诊断工作台**：
+
+- 打开或选择真实 `.inp` 文件，自动刷新项目快照
+- 调用 `cae diagnose <inp> --json` 显示规则层、案例召回、LLM 状态和修正建议
+- 诊断驾驶舱展示真实置信度，点击“查看依据”可展开 `evidence_score`、`evidence_source_trust`、`evidence_support_count`、证据行和风险评分
+- Docker / 本地求解器状态来自真实环境检测，不使用模拟数据
+- 模型下拉框读取本地 GGUF、Ollama 模型和 `cae model set` 配置，可在桌面端直接切换
 
 ### 界面预览
 
@@ -137,12 +146,35 @@ AI 诊断模型优先级：`--model-name` > `CAE_AI_MODEL` 环境变量 > `cae m
 
 | 页面 | 路由 | 功能 |
 | --- | --- | --- |
-| 项目管理 | `/project` | 打开/管理工作区目录 |
-| 求解 | `/solve` | 配置并运行求解器 |
-| 结果查看 | `/viewer` | VTK.js 三维可视化 |
-| 诊断 | `/diagnose` | 运行诊断并查看结果 |
-| Docker | `/docker` | 管理容器化求解器 |
-| 设置 | `/settings` | 应用配置 |
+| AI 诊断 | `/diagnose` | 选择 INP、运行真实诊断、查看证据与修正建议 |
+| 诊断驾驶舱 | `/project` | 查看项目快照、诊断流水线、真实置信度依据 |
+| 求解证据 | `/solve` | 配置本地/容器求解，运行预检查和求解命令 |
+| 结果证据 | `/viewer` | 读取真实 FRD / VTU / DAT 结果与日志 |
+| 容器环境 | `/docker` | 检测 WSL2 Docker、镜像目录、拉取状态 |
+| 诊断设置 | `/settings` | 查看求解器、模型、证据护栏配置 |
+
+### 桌面版安装包
+
+Windows 安装包由 Tauri NSIS 打包生成：
+
+```powershell
+cd cae-gui
+npm run tauri build -- --bundles nsis
+```
+
+构建产物默认位于：
+
+```text
+cae-gui/src-tauri/target/release/bundle/nsis/CAE 工具箱_0.1.0_x64-setup.exe
+```
+
+也可以直接运行免安装 exe：
+
+```text
+cae-gui/src-tauri/target/release/cae-gui.exe
+```
+
+> 说明：`tauri.conf.json` 当前启用无系统边框窗口，应用内部提供最小化、最大化和关闭按钮。MSI 打包依赖 WiX；若本机 WiX `light.exe` 失败，优先使用 NSIS `.exe` 安装包。
 
 ### 开发运行
 
@@ -157,10 +189,16 @@ npm run dev
 npm run tauri dev
 
 # 构建桌面安装包
-npm run tauri build
+npm run tauri build -- --bundles nsis
 ```
 
-GUI 通过 `useCaeCli` 组合式函数调用 CLI 后端，支持 `solve`、`diagnose`、`docker`、`inp` 等全部命令。
+Windows 若命中了系统 `link.exe` 而不是 MSVC 链接器，使用 Visual Studio Build Tools 环境构建：
+
+```powershell
+cmd /d /s /c '"C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvars64.bat" && npx tauri build --bundles nsis'
+```
+
+GUI 通过 `useCaeCli` 组合式函数调用 CLI 后端，支持 `solve`、`diagnose`、`docker`、`inp`、`model` 和 `gui snapshot` 等命令。Tauri 能执行的命令在 `cae-gui/src-tauri/capabilities/default.json` 中显式放行。
 
 ---
 
@@ -304,14 +342,73 @@ OpenCode 配置示例：
 
 ---
 
-## 诊断与守卫
+## AI 诊断
 
-`cae diagnose --json` 导出带证据标注的结构化问题：
+诊断系统是当前项目的核心。它不是简单调用 LLM，而是三层结构：
+
+1. **L1 规则引擎**：解析 INP、求解日志和结果文件，识别语法、边界、材料、收敛、运行时等问题。
+2. **L2 参考案例召回**：从 `cae/ai/data/reference_cases.json` 检索相似算例，提供相似度和预期结果范围。
+3. **L3 LLM 补充推理**：可选启用，用于解释复杂证据和生成更自然的修正建议；规则和证据仍是主依据。
+
+### 常用命令
+
+```bash
+# 诊断结果目录
+cae diagnose results/
+
+# 直接诊断 INP 文件，会自动使用 INP 所在目录作为证据目录
+cae diagnose examples/simple_beam.inp
+
+# 导出结构化 JSON，供桌面端、MCP 或自动化流水线使用
+cae diagnose examples/simple_beam.inp --json
+
+# 启用 LLM 补充推理
+cae diagnose results/ --ai
+
+# 指定模型
+cae diagnose results/ --ai --model-name deepseek-r1:1.5b
+```
+
+### 结构化诊断 JSON
+
+`cae diagnose --json` 导出带证据标注的结构化问题，桌面版“诊断驾驶舱”的置信度和流水线均来自这些字段：
 
 - `evidence_line`：`file:line: 摘录` 证据定位
-- `evidence_score`：置信度 `[0,1]`
+- `evidence_score`：证据置信度 `[0,1]`
+- `evidence_source_trust`：证据来源可信度
 - `evidence_support_count`：独立支撑文件数
 - `evidence_conflict`：矛盾标注
+- `confidence`：`high` / `medium` / `low`
+- `triage`：处理分层，如 `safe_auto_fix`、`monitor`、`review`
+- `summary.risk_score`：风险评分 `[0,100]`
+- `summary.execution_plan`：按优先级排序的修正/检查计划
+- `similar_cases`：参考案例召回与相似度
+- `routing` / `agent`：求解器状态门控和下一步建议
+
+示例：
+
+```json
+{
+  "issue_count": 2,
+  "summary": {
+    "confidence_counts": {"medium": 2},
+    "risk_score": 44,
+    "risk_level": "medium"
+  },
+  "issues": [
+    {
+      "severity": "error",
+      "category": "input_syntax",
+      "evidence_line": "simple_beam.inp:23: *STEP",
+      "evidence_score": 0.59,
+      "confidence": "medium",
+      "triage": "safe_auto_fix"
+    }
+  ]
+}
+```
+
+### 证据护栏
 
 守卫阈值按类别配置：
 
@@ -325,6 +422,22 @@ OpenCode 配置示例：
 - 环境变量：`CAE_DIAG_HISTORY_DB_PATH=<path>`
 
 当证据薄弱或矛盾时，严重级别自动降级（如 `error -> warning`）以减少误报。
+
+### 桌面端诊断视图
+
+桌面端围绕诊断构建了两层入口：
+
+- **AI 诊断页**：选择 `.inp` 文件，运行真实诊断，查看规则、案例、LLM、证据输入和诊断结论。
+- **诊断驾驶舱**：将诊断 JSON 聚合为可视化状态，包括诊断流水线、真实证据均分、风险评分和逐条置信度依据。
+
+桌面端使用的快照命令：
+
+```bash
+cae gui snapshot --project-root E:\cae-cli --json
+cae gui snapshot --project-root E:\cae-cli --inp examples/simple_beam.inp --json
+```
+
+快照包含项目根目录、当前输入文件、INP 结构树、Docker 状态、本地模型列表、求解器状态、结果/日志文件和桌面端所需的资产统计。
 
 ---
 
